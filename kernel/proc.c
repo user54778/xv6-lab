@@ -121,6 +121,27 @@ found:
     return 0;
   }
 
+  // Empty kernel user page table.
+  ukvminit(p);
+  if (p->pagetable == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  //printf("after ukvminit\n");
+
+  // Create a mapping for the user kernel page table to process's kernel stack.
+  // Map it high in memory, followed by an invalid
+  // guard page.
+  // Largely copied from procinit.
+  char *pa = kalloc();
+  if (pa == 0) {
+    panic("kalloc");
+  }
+  uint64 va = KSTACK((int) (p - proc));
+  ukvmmap(p, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -142,6 +163,21 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+  if (p->kstack) {
+    // grab pte for va kstack.
+    pte_t *pte = walk(p->kpagetable, p->kstack, 0);
+    if (pte == 0) {
+      return;
+    }
+    // grab physical addr of pte
+    uint64 pa = PTE2PA(*pte);
+    // free that pa of the kernel stack
+    kfree((void *)pa);
+  }
+  if (p->kpagetable) {
+    proc_kfreepagetable(p->kpagetable);
+  }
+  p->kpagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -193,6 +229,25 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
+}
+
+// Free kernel page table without freeing leaf physical memory pages.
+void
+proc_kfreepagetable(pagetable_t kpagetable) {
+  //printf("kfreepagetable\n");
+  // Essentially, copy freewalk, but only free page directories.
+  for(int i = 0; i < 512; i++) {
+    pte_t pte = kpagetable[i]; // grab the pte to this directory.
+    if ((pte & PTE_V)) {
+      kpagetable[i] = 0; // null this entry, but *don't* free actual pa its pointing to.
+      if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+        // this pte is pointing to a lower-level page directory.
+        uint64 child = PTE2PA(pte);
+        proc_kfreepagetable((pagetable_t)child);
+      }
+    }
+  }
+  kfree((void*)kpagetable);
 }
 
 // a user program that calls exec("/init")
@@ -465,14 +520,19 @@ scheduler(void)
     intr_on();
     
     int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
+    for (p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
+      if (p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        // load proc's kpagetable into core's satp reg
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -484,8 +544,10 @@ scheduler(void)
       release(&p->lock);
     }
 #if !defined (LAB_FS)
-    if(found == 0) {
+    if (found == 0) {
       intr_on();
+      // use kernel_pagetable when no process is running
+      kvminithart();
       asm volatile("wfi");
     }
 #else

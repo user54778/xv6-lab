@@ -1,0 +1,11 @@
+vmprint answers
+
+Q1: What does Page 0 contain? -> The root page (directory) table (level 2) at PA ...87f6a000
+Q2: What does Page 2 contain? -> The *actual* page table that points to actual physical pages.
+Q3: Could a *user* process r/w mmap'd memory by *page 1*? -> NO. Only the lowest level of 
+ the hierarchy stores PTEs that map to PM. The root and middle tables are merely intermediates (internal)
+ nodes, we can only read from the leaves.
+
+kernel page table per process write-up
+
+

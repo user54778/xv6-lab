@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -45,6 +47,42 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+}
+
+void
+ukvminit(struct proc *p) {
+  p->kpagetable = (pagetable_t) kalloc(); 
+  memset(p->kpagetable, 0, PGSIZE);
+
+  // uart registers
+  ukvmmap(p, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  ukvmmap(p, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT
+  ukvmmap(p, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  ukvmmap(p, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  ukvmmap(p, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  ukvmmap(p, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  ukvmmap(p, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+}
+
+// kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
+void
+ukvmmap(struct proc *p, uint64 va, uint64 pa, uint64 sz, int perm) {
+  if(mappages(p->kpagetable, va, sz, pa, perm) != 0) {
+    panic("ukvmmap");
+  }
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -132,7 +170,7 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->kpagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -439,4 +477,65 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+
+// Performs depth-first search on the PTEs into other nested page directories.
+void
+vmprintwalk(pagetable_t pagetable, int level) {
+  // 2^9 = 512 PTEs
+  // Start at the root page directory (table in xv6 terms) 
+  // and iterate over each child page directory until reaching the page table
+  // with the physical addresses.
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    // Only print valid PTEs
+    if (pte & PTE_V) {
+      for (int j = 0; j <= level; j++) {
+        printf(".."); 
+        if (++j <= level) {
+          printf(" ");
+          --j;
+        }
+      }
+      printf("%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+  
+      // this PTE points to a lower-level page table.
+      // Perms aren't be set for PT page.
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+        uint64 child = PTE2PA(pte);
+        vmprintwalk((pagetable_t)child, level + 1);
+      }
+    }
+  }
+}
+
+/*
+ * Print the pagetable in the format as shown below.
+ * page table 0x0000000087f6e000
+ * ..0: pte 0x0000000021fda801 pa 0x0000000087f6a000
+ * .. ..0: pte 0x0000000021fda401 pa 0x0000000087f69000
+ * .. .. ..0: pte 0x0000000021fdac1f pa 0x0000000087f6b000
+ * .. .. ..1: pte 0x0000000021fda00f pa 0x0000000087f68000
+ * .. .. ..2: pte 0x0000000021fd9c1f pa 0x0000000087f67000
+ * ..255: pte 0x0000000021fdb401 pa 0x0000000087f6d000
+ * .. ..511: pte 0x0000000021fdb001 pa 0x0000000087f6c000
+ * .. .. ..510: pte 0x0000000021fdd807 pa 0x0000000087f76000
+ * .. .. ..511: pte 0x0000000020001c0b pa 0x0000000080007000
+ * Line 1 displays the argument to vmprint.
+ * For each PTE, *including* PTEs that refer to PTs in deeper page directories,
+ * print them out, denoted by its level with "..".
+ * Each PTE line shows the PTE index in its page-table page, pte bits, and the PADDR extracted from the
+ * PTE.
+ *
+ * Q1: What does Page 0 contain? -> The root page (directory) table (level 2) at PA ...87f6a000
+ * Q2: What does Page 2 contain? -> The *actual* page table that points to actual physical pages.
+ * Q3: Could a *user* process r/w mmap'd memory by *page 1*? -> NO. Only the lowest level of 
+ * the hierarchy stores PTEs that map to PM. The root and middle tables are merely intermediates (internal)
+ * nodes, we can only read from the leaves.
+*/
+void
+vmprint(pagetable_t pagetable) {
+  printf("page table %p\n", pagetable); 
+  vmprintwalk(pagetable, 0);
 }
