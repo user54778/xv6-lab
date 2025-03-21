@@ -323,7 +323,11 @@ sfence_vma()
 #define PGSIZE 4096 // bytes per page
 #define PGSHIFT 12  // bits of offset within a page
 
+// aligns size to page size; used for allocing so we know for certain we have enough 
+// pages to alloc the memory.
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
+// rounds a down to page boundary; used for grabbing a page's address for locating
+// the start address of the page.
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 
 #define PTE_V (1L << 0) // valid

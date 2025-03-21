@@ -8,4 +8,24 @@ Q3: Could a *user* process r/w mmap'd memory by *page 1*? -> NO. Only the lowest
 
 kernel page table per process write-up
 
+Xv6 has a single kernel page table that's used whenever it executes in the kernel. The kernel page table is a 
+direct mapping to physical addresses, so that kernel virtual address x maps to physical address x. 
+Xv6 also has a separate page table for each process's user address space, containing only mappings for that process's user memory, starting at virtual address zero. 
+Because the kernel page table doesn't contain these mappings, user addresses are not valid in the kernel. 
+Thus, when the kernel needs to use a user pointer passed in a system call (e.g., the buffer pointer passed to write()), the kernel must first translate the pointer to a physical address. 
+The goal of this section and the next is to allow the kernel to directly dereference user pointers.
 
+Our first goal was to modify the kernel such that *every* process uses its *own* copy of the kernel page table
+when executing in the kernel.
+
+Notes: xv6 runs on Sv39 RISC-V,  meaning only the bottom 39 bits of the 64-bit VA is used. The top 25 of these 39 bits are used to index into the 3-level page table. The first two levels I refer to as the page directories,
+with the *last one* only being ht actual page table, where its entries directly point to the physical address.
+To use a page table, the kernel needs to *first* write the PA of the root of this page table hierarchy into 
+the `satp` register. It's important that each page table takes up *one* page, which is a 4096 byte chunk.
+This means we can fit 512 PTEs per page.
+    Why can't we just have one page table? -> 4096 = 2^12 bytes. log_2(4096) = 12 bits needed for the offset (this is used to actually determine *where* in the page to look for the PA). Therefore, the VPN = 39 - 12 = 27 bits needed. A linear page table would requires 2^39 entries which is much too large. Thus we split this into a multi-level page table; but exactly *how* many levels do we split by?
+    PTE = 8 bytes. 4096 / 8 = 512 entries/page. Page Directory requires *one* entry per page. 2^27 VPs; 2^27 * 8 / 4096 = 2^18; 2^18 * 8 = 2^21 / 2^12 = 512 pages to represent one directory. So a two-level is too little. Therefore, log_2(512) = 9 bits to index *one* PD; 27 / 9 = 3 levels of indirection required. Thus RISC-V (and xv6) uses a 3-level page table.
+
+    Each process has its own kernel stack. Kernel directly maps most of its resources from virtual memory to physical memory. One page table per process. To get more memory, `kalloc` then add PTEs to process's page table that point to new physical page(s). At the start, the kernel only mapped from kernel VA -> PA. Our goal was to add the PTEs of page tables created for user processes into the kernel page table. We accomplished this by copying 
+
+TODO: Answer q3.

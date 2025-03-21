@@ -80,7 +80,7 @@ ukvminit(struct proc *p) {
 // kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 void
 ukvmmap(struct proc *p, uint64 va, uint64 pa, uint64 sz, int perm) {
-  if(mappages(p->kpagetable, va, sz, pa, perm) != 0) {
+  if (mappages(p->kpagetable, va, sz, pa, perm) != 0) {
     panic("ukvmmap");
   }
 }
@@ -191,8 +191,9 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
-  for(;;){
-    if((pte = walk(pagetable, a, 1)) == 0)
+  for(;;) {
+    // walk rets err
+    if ((pte = walk(pagetable, a, 1)) == 0)
       return -1;
     if(*pte & PTE_V)
       panic("remap");
@@ -373,6 +374,34 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return -1;
 }
 
+// Copy the user page table into the kernel page table.
+int 
+ukvmcopy(pagetable_t usr_pgtbl, pagetable_t k_pgtbl, uint64 usr_sz, uint64 k_sz) {
+  uint64 i, pa;
+  pte_t *usr_pte, *k_pte;
+  uint flags;
+
+  // Copy *only* the user page table into the kernel page table.
+  for (i = PGROUNDDOWN(usr_sz); i < k_sz; i += PGSIZE) {
+    if ((usr_pte = walk(usr_pgtbl, i, 0)) == 0) {
+      panic("ukvmcopy: user pte should exist");
+    }
+    if ((*usr_pte & PTE_V) == 0) {
+      panic("ukvmcopy: page not present");
+    }
+    if ((k_pte = walk(k_pgtbl, i, 1)) == 0) {
+      panic("ukvmcopy: kernel pte should exist");
+    }
+    pa = PTE2PA(*usr_pte);
+    flags = PTE_FLAGS(*usr_pte);
+
+    // clear PTE_U to map kpt to only allow supervisor mode for kpte.
+    flags &= ~PTE_U;
+    *k_pte = PA2PTE(pa) | flags;
+  }
+  return 0;
+}
+
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
 void
@@ -394,7 +423,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
-  while(len > 0){
+  while (len > 0) {
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
@@ -414,19 +443,25 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 // Copy from user to kernel.
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
+// Reads memory pointed by by user pointers.
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+  /*
   uint64 n, va0, pa0;
 
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+  while (len > 0) {
+    va0 = PGROUNDDOWN(srcva);           // locate start of page from srcva
+    pa0 = walkaddr(pagetable, va0); // walk page table for pa
+    if (pa0 == 0) {
       return -1;
+    }
+    // Calculate how many bytes you can access from srcva to end of page.
+    // 4096 - (offset loc of srcva - start of page va0)
     n = PGSIZE - (srcva - va0);
-    if(n > len)
+    if (n > len) {
       n = len;
+    }
     memmove(dst, (void *)(pa0 + (srcva - va0)), n);
 
     len -= n;
@@ -434,6 +469,9 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     srcva = va0 + PGSIZE;
   }
   return 0;
+  */
+  //printf("copy in with pagetable %p\n", pagetable);
+  return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -443,21 +481,26 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
+  /*
   uint64 n, va0, pa0;
   int got_null = 0;
 
-  while(got_null == 0 && max > 0){
+  while (got_null == 0 && max > 0) {
+    // Same process as copyin
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if (pa0 == 0) {
       return -1;
+    }
     n = PGSIZE - (srcva - va0);
-    if(n > max)
+    if (n > max) {
       n = max;
+    }
 
+    // Copy null-terminated string
     char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
+    while (n > 0) {
+      if (*p == '\0') {
         *dst = '\0';
         got_null = 1;
         break;
@@ -472,11 +515,13 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
     srcva = va0 + PGSIZE;
   }
-  if(got_null){
+  if (got_null) {
     return 0;
   } else {
     return -1;
   }
+  */
+  return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 

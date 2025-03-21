@@ -276,6 +276,9 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  ukvmcopy(p->pagetable, p->kpagetable, 0, p->sz);
+  //printf("after userinit ukvmcopy\n");
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -297,11 +300,17 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
-  if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+  if (n > 0) {
+    if (PGROUNDUP(sz + n) > PLIC) {
       return -1;
     }
-  } else if(n < 0){
+    if ((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+      return -1;
+    }
+    // copy new pgtbl
+    ukvmcopy(p->pagetable, p->kpagetable, sz - n, sz);
+    //printf("after sbrk ukvm\n");
+  } else if (n < 0) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
@@ -329,6 +338,13 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  // copy child pgtbl into kpt
+  if (ukvmcopy(np->pagetable, np->kpagetable, 0, np->sz) < 0) {
+    release(&np->lock);
+    return -1;
+  }
+  //printf("after fork ukvmcopy\n");
 
   np->parent = p;
 

@@ -116,6 +116,9 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  ukvmcopy(p->pagetable, p->kpagetable, 0, p->sz);
+  //printf("after ukvm exec\n");
+
   if (p->pid == 1) {
     vmprint(p->pagetable);
   }
