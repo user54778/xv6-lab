@@ -14,7 +14,13 @@ trampoline:
 .align 4
 .globl uservec
 uservec:    
-	#
+	# User page table *must* include mapping for `uservec`, the trap vector instructions
+        # `stvec` points to.
+        # `uservec` *must* switch `satp` to point to the kernel page table.
+        # To continue execution AFTER switching, `uservec` needs to be mapped
+        # in the same address in the KPT and UPT. 
+        # This is the purpose TRAMPOLINE page that contains `uservec`.
+
         # trap.c sets stvec to point here, so
         # traps from user space start here,
         # in supervisor mode, but with a
@@ -23,12 +29,31 @@ uservec:
         # sscratch points to where the process's p->trapframe is
         # mapped into user space, at TRAPFRAME.
         #
+
+        # Step 1: We need to be able to modify some registers to set `satp` and generate
+        # addresses at which to save registers. RISC-V gives us `sscratch` to help.
         
-	# swap a0 and sscratch
-        # so that a0 is TRAPFRAME
+        # control and status register r/w: rd, csr, rs1
+        # Copy x[rs1] to the csr, then write t (the value of csr) x[rd]
+
+	# swap a0 and sscratch so that a0 is now TRAPFRAME.
         csrrw a0, sscratch, a0
+        # Now the user code's a0 reg is saved, and a0 contains 
+        # the kernel placed value in sscratch.
+
+        # Step 2: We need to save user registers. `satp` still refers to the UPT,
+        # so we need the trapframe to be mapped in the UADDR.
+        # trapframe -> ds store CPU state when trap occurs.
+        # When creating a proc, xv6 allocs a page for the proc's trapframe, and its
+        # *always* mapped at user VA TRAPFRAME, which is below TRAMPOLINE.
+        # Thus, right here `a0` holds a pointer to the current proc's trapframe.
 
         # save the user registers in TRAPFRAME
+
+        # Base + displacement
+        # store eight bytes at x[rs2] to mem at addr x[rs1] + sign-extend(offset)
+        # Store 8 bytes of ra at a0, offset by 40 bytes.
+        # Repeat this process for all user registers in TRAPFRAME.
         sd ra, 40(a0)
         sd sp, 48(a0)
         sd gp, 56(a0)
@@ -86,6 +111,12 @@ uservec:
 
 .globl userret
 userret:
+        # usertrapret calls userret with a pointer to the proc's UPT
+        # in `a0` and TRAPFRAME in `a1`.
+        # This ONLY works because the TRAMPOLINE page is mapped at the SAME
+        # VA in user AND kernel page tables, allowing `uservec` to continue
+        # execution after changing `satp`.
+
         # userret(TRAPFRAME, pagetable)
         # switch from kernel to user.
         # usertrapret() calls here.
@@ -101,6 +132,7 @@ userret:
         ld t0, 112(a0)
         csrw sscratch, t0
 
+        # load out of trapframe
         # restore all but a0 from TRAPFRAME
         ld ra, 40(a0)
         ld sp, 48(a0)
@@ -133,6 +165,8 @@ userret:
         ld t5, 272(a0)
         ld t6, 280(a0)
 
+        # swap a0 and sscratch; sscratch currently has the return value of syscall 
+        # and a0 is a pointer to trapframe
 	# restore user a0, and save TRAPFRAME in sscratch
         csrrw a0, sscratch, a0
         

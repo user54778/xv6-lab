@@ -28,13 +28,15 @@ struct cpu {
 
 extern struct cpu cpus[NCPU];
 
-// per-process data for the trap handling code in trampoline.S.
-// sits in a page by itself just under the trampoline page in the
-// user page table. not specially mapped in the kernel page table.
-// the sscratch register points here.
+// Per-process data for the trap handling code in trampoline.S.
+// Sits in a page by itself just under the trampoline page in the
+// user page table. Not specially mapped in the kernel page table.
+// The sscratch register points here.
+//
 // uservec in trampoline.S saves user registers in the trapframe,
 // then initializes registers from the trapframe's
 // kernel_sp, kernel_hartid, kernel_satp, and jumps to kernel_trap.
+//
 // usertrapret() and userret in trampoline.S set up
 // the trapframe's kernel_*, restore user registers from the
 // trapframe, switch to the user page table, and enter user space.

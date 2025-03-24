@@ -6,9 +6,24 @@
 #include "proc.h"
 #include "defs.h"
 
+
+// NOTE: stvec    -> Where the kernel writes the address of its trap handler
+// NOTE: sepc     -> Where RISC-V saves the program counter. `sret` copies `sepc` to the pc. 
+//                   The kernel can write to `sepc` to control where `sret` goes. 
+// NOTE: scause   -> Reason for the trap
+// NOTE: sscratch -> Kernel uses for start of TRAMPOLINE.
+// NOTE: sstatus  -> SIE bit in `sstatus` controls whether device interrupts are enabled.
+//                   SSP bit indicates whether trap came from user/supervisor, and controls 
+//                   what mode `sret` returns.
+//
+// The path of a trap from user space goes as follows:
+// uservec (trampoline.S) -> usertrap (trap.c) 
+// -> usertrapret (trap.c) calls userret -> userret (trampoline.S).
+
 struct spinlock tickslock;
 uint ticks;
 
+// strings to place in trampoline, uservec, and userret.
 extern char trampoline[], uservec[], userret[];
 
 // in kernelvec.S, calls kerneltrap().
@@ -29,43 +44,51 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
-//
-// handle an interrupt, exception, or system call from user space.
-// called from trampoline.S
-//
+// Handle an interrupt, exception, or system call from user space.
+// Called from trampoline.S.
 void
 usertrap(void)
 {
   int which_dev = 0;
 
-  if((r_sstatus() & SSTATUS_SPP) != 0)
+  if ((r_sstatus() & SSTATUS_SPP) != 0) {
     panic("usertrap: not from user mode");
+  }
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
   w_stvec((uint64)kernelvec);
 
+  // grab currently running process
   struct proc *p = myproc();
   
-  // save user program counter.
+  // save user program counter; we might switch into ANOTHER process
+  // while executing here, so save sepc.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  // Check reason for trap.
+  // SSP bit; 8 means trap came from user mode, i.e., 
+  // we came here because of a system call.
+  // Figure 10.3.
+  if (r_scause() == 8) {
     // system call
-
-    if(p->killed)
+    if (p->killed) {
       exit(-1);
+    }
 
     // sepc points to the ecall instruction,
-    // but we want to return to the next instruction.
+    // but we want to return to the NEXT instruction.
+    // We don't want to re-execute the sepc call.
     p->trapframe->epc += 4;
 
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
     intr_on();
 
+    // Look up syscall number and perform that system call. Then 
+    // start the return back to user space.
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } else if ((which_dev = devintr()) != 0) {
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
@@ -73,19 +96,20 @@ usertrap(void)
     p->killed = 1;
   }
 
-  if(p->killed)
+  if (p->killed) {
     exit(-1);
+  }
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if (which_dev == 2) {
     yield();
+  }
 
+  // Go back to user space (start to).
   usertrapret();
 }
 
-//
-// return to user space
-//
+// Return to user space.
 void
 usertrapret(void)
 {
@@ -103,13 +127,14 @@ usertrapret(void)
   // the process next re-enters the kernel.
   p->trapframe->kernel_satp = r_satp();         // kernel page table
   p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
-  p->trapframe->kernel_trap = (uint64)usertrap;
+  p->trapframe->kernel_trap = (uint64)usertrap; // usertrap function
   p->trapframe->kernel_hartid = r_tp();         // hartid for cpuid()
 
   // set up the registers that trampoline.S's sret will use
   // to get to user space.
   
   // set S Previous Privilege mode to User.
+  // setup various bits in sstatus register.
   unsigned long x = r_sstatus();
   x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
   x |= SSTATUS_SPIE; // enable interrupts in user mode
@@ -124,8 +149,12 @@ usertrapret(void)
   // jump to trampoline.S at the top of memory, which 
   // switches to the user page table, restores user registers,
   // and switches to user mode with sret.
-  uint64 fn = TRAMPOLINE + (userret - trampoline);
-  ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+  uint64 fn = TRAMPOLINE + (userret - trampoline); 
+  // Cast `fn` to a function pointer, which takes two uint64 and returns void.
+  // It then calls this function pointer with TRAPFRAME and satp.
+  // Use fn as a function pointer and then jump to that function with TRAPFRAME and satp
+  // args in a0 and a1.
+  ((void (*)(uint64, uint64))fn)(TRAPFRAME, satp);
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,

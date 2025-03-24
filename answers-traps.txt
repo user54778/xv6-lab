@@ -1,0 +1,76 @@
+Q1: Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+
+A: Function G:
+        * Setup function (function prologue)
+        int g(int x) {
+            0:	1141                	addi	sp,sp,-16
+            * Note use of `sd` -> Store doubleword. In this case, it saves the frame pointer `s0` on the stack `sp`.
+            2:	e422                	sd	s0,8(sp)
+            4:	0800                	addi	s0,sp,16
+            return x+3;
+        }
+            6:	250d                	addiw	a0,a0,3
+            8:	6422                	ld	s0,8(sp)
+            a:	0141                	addi	sp,sp,16
+            c:	8082                	ret
+    Addresses 6-c perform the function body.
+        6 -> Adds word (sign-extended) to a0. Here, a0 represents x the function argument.
+
+B: Function F:
+int f(int x) {
+   e:	1141                	addi	sp,sp,-16
+  10:	e422                	sd	s0,8(sp)
+  12:	0800                	addi	s0,sp,16
+  return g(x);
+}
+  14:	250d                	addiw	a0,a0,3
+    * Store 3 in the function argument (a0).
+  16:	6422                	ld	s0,8(sp)
+  18:	0141                	addi	sp,sp,16
+  1a:	8082                	ret
+
+C: Function main
+void main(void) {
+  1c:	1141                	addi	sp,sp,-16
+  1e:	e406                	sd	ra,8(sp)
+  20:	e022                	sd	s0,0(sp)
+  22:	0800                	addi	s0,sp,16
+  printf("%d %d\n", f(8)+1, 13);
+  // load constant 13 into register a2
+  24:	4635                	li	a2,13
+  // load constant 12 into register a1
+  // this is the result of f(8) + 1
+  26:	45b1                	li	a1,12
+  // auipc -> Add Upper Immediate to PC
+  // add 20-bit sign-extended imm, *left-shifted* by 12 bits to pc (a0).
+  28:	00000517          	auipc	a0,0x0
+  2c:	7b050513          	addi	a0,a0,1968 # 7d8 <malloc+0xea>
+  // auipc to PC ra.
+  30:	00000097          	auipc	ra,0x0
+  // jump and link register
+  // write previous pc + 4 into ra
+  34:	600080e7          	jalr	1536(ra) # 630 <printf>
+  exit(0);
+  38:	4501                	li	a0,0
+  3a:	00000097          	auipc	ra,0x0
+  3e:	27e080e7          	jalr	638(ra) # 2b8 <exit>
+* a0 holds the format string address
+* a1 holds 12 (f(8) + 1)
+* a2 holds 13
+
+Q2: Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.) 
+
+* The call to `f` is inlined (directly computed by gnu-gcc) and the result is directly placed in a1.
+
+* Similarly, the call to `g` is inlined into a2.
+
+Q3: At what address is the function printf located? 
+
+* The address of the format string is at 7d8 after the addi call in 2c of the user address space.
+* The actual printf function *itself* is located at the `jalr` instruction, or specifically whatever is in the program counter (PC) + the offset 1536. This is because the previous instruction `auipc` loads the PC into `ra`. Then, `jalr` uses the address in `ra` to call `printf`.
+
+Q4: What value is in the register ra just after the jalr to printf in main? 
+
+* `ra` contains the return address. Specifically, auipc loads 0x0 into ra again, to allow the program to jump back to the correct part of main after printf finishes.
+
+
