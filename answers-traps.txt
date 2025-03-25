@@ -60,17 +60,41 @@ void main(void) {
 
 Q2: Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.) 
 
-* The call to `f` is inlined (directly computed by gnu-gcc) and the result is directly placed in a1.
+* The call to `f` is inlined (directly computed by gnu-gcc) and the result is directly placed in `a1`.
 
-* Similarly, the call to `g` is inlined into a2.
+* Similarly, the call to `g` is inlined into `a2`.
 
-Q3: At what address is the function printf located? 
+Q3: At what address is the function `printf` located? 
 
 * The address of the format string is at 7d8 after the addi call in 2c of the user address space.
 * The actual printf function *itself* is located at the `jalr` instruction, or specifically whatever is in the program counter (PC) + the offset 1536. This is because the previous instruction `auipc` loads the PC into `ra`. Then, `jalr` uses the address in `ra` to call `printf`.
 
-Q4: What value is in the register ra just after the jalr to printf in main? 
+Q4: What value is in the register `ra` just after the `jalr` to `printf` in main? 
 
 * `ra` contains the return address. Specifically, auipc loads 0x0 into ra again, to allow the program to jump back to the correct part of main after printf finishes.
 
+Q5: Run the following code.
+
+	unsigned int i = 0x00646c72;
+	printf("H%x Wo%s", 57616, &i);
+
+What is the output?
+
+A: HE110 World -> Why?
+* %x -> hex rep. %s -> string.
+* i is an unsigned 32-bit integer.
+  * i is then = 'd' = 64, 'l' = 6c, and 'r' 72.
+  * Since this is little endian, we read from r->l.
+  * So, 'r', 'l', and then 'd' are printed out.
+* 57616 = 'E110'.
+* For a big-endian system, i would need to change to reflect how the bits are read.
+    * i would need to be set to = 0x726c6400;
+    * 57616 would not need to change. The printed hex format would remain the same regardless of endianness; however, the bytes that make up 57616 itself *would* change.
+
+Q6: In the following code, what is going to be printed after 'y='? (note: the answer is not a specific value.) Why does this happen?
+
+	printf("x=%d y=%d", 3);
+
+A: The register a1 will hold the integer value 3. Only register a0 contains the format string used in printf. Here, only x actually
+grabs the value located in a1; y will be whatever value happens to be in the register its reading from, which is unknown.
 
