@@ -121,6 +121,7 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
@@ -132,3 +133,51 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+// Prints out a list of function calls on the stack above the point
+// at which an error occurred.
+void
+backtrace() {
+  // * What we know -> Stack frame has a frame ptr holds addr of caller's fp.
+  // * Frame ptr is stored in reg s0 of curr exec func.
+  // * One page per stack -> top and bottom computed 
+  //   via PGROUNDDOWN(fp) and PGROUNDUP(fp) respectively.
+  // * General algorithm: 
+  //    PGROUNDDOWN(fp) != fp
+  //    start at PGROUNDUP(fp) (or vice versa?)
+  //    while (current frame pointer != 0) {
+  //      grab stack frame
+  //      grab frame pointer (top of current frame)
+  //      print saved return address
+  //      move to next stack frame 
+  //    }
+  /*
+  uint64 fp = r_fp();
+  uint64 bot = PGROUNDDOWN(fp);
+  uint64 top = PGROUNDUP(fp);
+
+  printf("Current frame pointer: %d\n", fp);
+  printf("Bottom of stack frame page: %d\n", bot);
+  printf("Top of stack frame page: %d\n", top);
+
+  printf("Return address %d\n", fp - 8);
+  printf("To previous frame %d\n", fp - 16);
+  */
+  uint64 fp = r_fp(); 
+  uint64 top = PGROUNDUP(fp);
+  uint64 bot = PGROUNDDOWN(fp);
+
+  printf("backtrace:\n");
+
+  while (fp >= bot && fp < top) {
+    // Crux of problem: We need the saved return address.
+    // We get that the memory location of that with the fp - 8. However,
+    // we need to make this a pointer to grab the actual VALUE at this memory address,
+    // so we can dereference that pointer.
+    uint64 savedAddr = *(uint64*)(fp - 8);
+    // Now grab its value
+    printf("%p\n", savedAddr); 
+    fp = *((uint64*)(fp - 16));
+  }
+}
+
