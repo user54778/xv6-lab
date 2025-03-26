@@ -102,6 +102,20 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2) {
+    // Manipulate the proc's alarm ticks here
+    // Only invoke if timer outstanding (what does that mean)?
+    // When a alarm interval expires, execute handler
+    // C: We know p->trapframe->epc is currently holding sepc, which points to 
+    // the user pc, which would let us execute the user code handler.
+    // B: we can determine this with ticks_passed and ticks.
+    p->ticks_passed++;
+    // Timer is outstanding, i.e., ticks_passed has now reached the interval (or greater)
+    if (p->ticks_passed >= p->ticks) {
+      // We should now reset ticks_passed to reflect this.
+      p->ticks_passed = 0;
+      // And we should now point the user pc to the handler function.
+      p->trapframe->epc = (uint64)p->fn;
+    }
     yield();
   }
 

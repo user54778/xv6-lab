@@ -94,9 +94,9 @@ allocproc(void)
 {
   struct proc *p;
 
-  for(p = proc; p < &proc[NPROC]; p++) {
+  for (p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
-    if(p->state == UNUSED) {
+    if (p->state == UNUSED) {
       goto found;
     } else {
       release(&p->lock);
@@ -108,18 +108,23 @@ found:
   p->pid = allocpid();
 
   // Allocate a trapframe page.
-  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+  if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
     release(&p->lock);
     return 0;
   }
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
-  if(p->pagetable == 0){
+  if (p->pagetable == 0) {
     freeproc(p);
     release(&p->lock);
     return 0;
   }
+  
+  // initialize tick fields
+  p->ticks = 0;
+  p->ticks_passed = 0;
+  p->fn = 0;
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -149,6 +154,10 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  // NOTE: new
+  p->ticks = 0;
+  p->ticks_passed = 0;
+  p->fn = 0;
   p->state = UNUSED;
 }
 

@@ -98,3 +98,38 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// Force a call to function fn every n ticks and then spin.
+uint64
+sys_sigalarm(void) {
+  // int, void (*fn)()
+  /*
+  uint now;
+  acquire(&tickslock);
+  now = ticks;
+  myproc()->ticks_passed = now - myproc()->ticks;
+  myproc()->ticks = now;
+  printf("ticks and ticks_passed: %d, %d\n", myproc()->ticks, myproc()->ticks_passed);
+  release(&tickslock);
+  */
+  // grab interval and fn from user space
+  //
+  uint64 now, fn;
+  if (argaddr(0, &now) < 0 || argaddr(1, &fn) < 0) {
+    return -1;
+  }
+  printf("now and fn: %d %d\n", now, fn);
+
+  struct proc *p = myproc();
+  p->ticks = ticks;
+  p->ticks_passed = ticks;
+  p->fn = (void*)fn;
+
+  printf("hi from sys_alarm\n");
+  return 0;
+}
+
+uint64
+sys_sigreturn(void) {
+  return 0;
+}
