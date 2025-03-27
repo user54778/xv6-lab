@@ -108,4 +108,6 @@ struct proc {
   uint ticks;                  // NOTE: new. Alarm interval
   void (*fn)();                // NOTE: new. Function ptr to handler function.
   uint ticks_passed;           // NOTE: new. How many ticks have passed since last call.
+  struct trapframe *resume_intr;
+  uint running; // bool flag for running
 };

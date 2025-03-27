@@ -118,18 +118,30 @@ sys_sigalarm(void) {
   if (argaddr(0, &now) < 0 || argaddr(1, &fn) < 0) {
     return -1;
   }
-  printf("now and fn: %d %d\n", now, fn);
+  //printf("now and fn: %d %d\n", now, fn);
 
   struct proc *p = myproc();
-  p->ticks = ticks;
-  p->ticks_passed = ticks;
+  p->ticks = now;
+  p->ticks_passed = now;
   p->fn = (void*)fn;
+  // running already init to 0 in proc
 
-  printf("hi from sys_alarm\n");
+  //printf("hi from sys_alarm\n");
   return 0;
 }
 
 uint64
 sys_sigreturn(void) {
+  // What registers do we need to save/restore resume of interrupted code?
+  // A: All registers (user registers) we saved in trampoline. These are 
+  // stored in trapframe, so we'll need to copy this into proc to save this state.
+  struct proc *p = myproc();
+  //*(p->resume_intr) = *(p->trapframe);
+  // We are restoring the old trapframe (i.e., what resume_intr is pointing to)
+  if (p->running == 1) {
+    *(p->trapframe) = *(p->resume_intr);
+    p->running = 0;
+  }
+  //backtrace();
   return 0;
 }

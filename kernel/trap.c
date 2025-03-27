@@ -113,8 +113,15 @@ usertrap(void)
     if (p->ticks_passed >= p->ticks) {
       // We should now reset ticks_passed to reflect this.
       p->ticks_passed = 0;
-      // And we should now point the user pc to the handler function.
-      p->trapframe->epc = (uint64)p->fn;
+
+      // check if alarm isn't running 
+      if (p->running == 0) {
+        *(p->resume_intr) = *(p->trapframe);
+        // And we should now point the user pc to the handler function.
+        p->trapframe->epc = (uint64)p->fn;
+        // Now the alarm is running
+        p->running = 1;
+      }
     }
     yield();
   }
