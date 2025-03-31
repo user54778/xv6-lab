@@ -38,17 +38,33 @@ sys_wait(void)
   return wait(p);
 }
 
+// Grow the process's memory size by n bytes and then return 
+// the start of the newly allocated region.
 uint64
 sys_sbrk(void)
 {
   int addr;
   int n;
 
-  if(argint(0, &n) < 0)
+  if (argint(0, &n) < 0) {
     return -1;
+  }
   addr = myproc()->sz;
+  if (n > 0) {
+    myproc()->sz = myproc()->sz + n;
+  } else {
+    return -1;
+  }
+  /*
+  if (n < 0) {
+    return -1;
+  }
+  myproc()->sz = myproc()->sz + n;
+  */
+  /*
   if(growproc(n) < 0)
     return -1;
+  */
   return addr;
 }
 

@@ -71,8 +71,11 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
-  if(va >= MAXVA)
+  // In our lazy alloc scheme, usertrap() should handle scenario where
+  // va is higher than any alloc'd with sbrk.
+  if (va >= MAXVA) {
     panic("walk");
+  }
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
@@ -180,10 +183,19 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+    // In normal allocation, why would this be an error?
+    // Alloc is unable to allocate memory. 
+    // In lazy allocation, this memory was likely never allocated to begin with!
+    if ((pte = walk(pagetable, a, 0)) == 0) {
+      //panic("uvmunmap: walk");
+      continue;
+    }
+    // In lazy allocation, we didn't actually *use* this physical memory!
+    // This isn't an issue in lazy allocation; in fact its expected, so we
+    // should just continue onwards.
+    if ((*pte & PTE_V) == 0) {
+      continue;
+    }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -314,10 +326,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    if ((pte = walk(old, i, 0)) == 0) {
+      //panic("uvmcopy: pte should exist");
+      continue;
+    }
+    // This page was never allocated lazily
+    if ((*pte & PTE_V) == 0) {
+      // panic("uvmcopy: page not present");
+      continue;
+    }
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -439,4 +456,39 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void
+vmprintwalk(pagetable_t pagetable, int level) {
+  // 2^9 = 512 PTEs
+  // Start at the root page directory (table in xv6 terms) 
+  // and iterate over each child page directory until reaching the page table
+  // with the physical addresses.
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    // Only print valid PTEs
+    if (pte & PTE_V) {
+      for (int j = 0; j <= level; j++) {
+        printf(".."); 
+        if (++j <= level) {
+          printf(" ");
+          --j;
+        }
+      }
+
+      printf("%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+      // this PTE points to a lower-level page table.
+      // Perms aren't be set for PT page.
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+        uint64 child = PTE2PA(pte);
+        vmprintwalk((pagetable_t)child, level + 1);
+      }
+    }
+  }
+}
+ 
+void
+vmprint(pagetable_t pagetable) {
+  printf("page table %p\n", pagetable); 
+  vmprintwalk(pagetable, 0);
 }
