@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -104,12 +106,18 @@ walkaddr(pagetable_t pagetable, uint64 va)
     return 0;
 
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
+  if (pte == 0) {
+    printf("INSIDE A\n");
     return 0;
-  if((*pte & PTE_V) == 0)
+  }
+  if ((*pte & PTE_V) == 0) {
+    printf("INSIDE B\n");
     return 0;
-  if((*pte & PTE_U) == 0)
+  }
+  if ((*pte & PTE_U) == 0) {
+    printf("INSIDE C\n");
     return 0;
+  }
   pa = PTE2PA(*pte);
   return pa;
 }

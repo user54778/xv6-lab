@@ -74,7 +74,8 @@ usertrap(void)
     uint64 va = r_stval(); 
     uint64 pa;
     // kill faulting va >= higher alloc'd with sbrk
-    if (va >= p->sz) {
+    // also kill if va <= user stack boundary
+    if (va >= p->sz || va <= PGROUNDDOWN(p->trapframe->sp)) {
       p->killed = 1;
     } else if ((pa = (uint64) kalloc()) == 0) {
       p->killed = 1;

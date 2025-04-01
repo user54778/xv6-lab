@@ -49,12 +49,24 @@ sys_sbrk(void)
   if (argint(0, &n) < 0) {
     return -1;
   }
+
+  addr = myproc()->sz;
+  if (n > 0) {
+    myproc()->sz += n;
+  } else {
+    // NOTE: If we are here, we should actually call growproc since whichever program
+    // called us wants to SHRINK the address space with a negative call to sbrk.
+    growproc(n);
+  }
+  return addr;
+  /*
   addr = myproc()->sz;
   if (n > 0) {
     myproc()->sz = myproc()->sz + n;
   } else {
     return -1;
   }
+  */
   /*
   if (n < 0) {
     return -1;
@@ -65,7 +77,7 @@ sys_sbrk(void)
   if(growproc(n) < 0)
     return -1;
   */
-  return addr;
+  //return addr;
 }
 
 uint64
