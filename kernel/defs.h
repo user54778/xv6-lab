@@ -8,6 +8,8 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+// NOTE: new
+struct refcount;
 
 // bio.c
 void            binit(void);
@@ -63,6 +65,11 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+void            refcount_init(void);
+void            refcount_incr(void *);
+void            refcount_decr(void *);
+void            refcount_clear(void *);
+void            refcount_get(void *);
 
 // log.c
 void            initlog(int, struct superblock*);

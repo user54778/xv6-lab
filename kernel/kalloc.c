@@ -23,6 +23,46 @@ struct {
   struct run *freelist;
 } kmem;
 
+// A reference counter for physical pages.
+struct {
+  struct spinlock lock;
+  // NOTE: We want to index into the page here and increment that count.
+  // How do we do that?
+  int count[0];
+} refcount;
+
+
+void 
+refcount_init(void) {
+  initlock(&refcount.lock, "refcount");
+  acquire(&refcount.lock);
+  memset(&refcount.count, 0, sizeof(refcount.count));
+  release(&refcount.lock);
+}
+
+void
+refcount_incr(void *pa) {
+  acquire(&refcount.lock);
+  // TODO: increment refcount of the pa of page
+  release(&refcount.lock);
+}
+
+void 
+refcount_decr(void *pa) {
+
+}
+
+void 
+refcount_clear(void *pa) {
+
+}
+
+void 
+refcount_get(void *pa) {
+
+}
+
+
 void
 kinit()
 {
