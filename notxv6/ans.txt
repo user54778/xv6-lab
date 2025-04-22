@@ -1,0 +1,8 @@
+1) Why are there missing keys with 2 threads but not 1?
+A) There is a data race. There are critical sections in put() and insert() that need 
+to be done atomically, but as is, nothing is preventing multiple threads from operating
+on the same data, resulting in lost data.
+Sequence (put): t1 checks if not placed, notes not, but then at the same time, t2 interrupts it, places its
+value, and t1 multiplexes back to its thread and then places its value. 
+2) We use a lock per hash bucket to take advantage of scenario where concurrent put()s have no overlap
+in memory.

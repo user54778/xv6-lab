@@ -4,9 +4,16 @@
 #include <assert.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <string.h>
 
 #define NBUCKET 5
 #define NKEYS 100000
+
+// Wrappers
+int Pthread_mutex_init(pthread_mutex_t *, const pthread_mutexattr_t *); 
+int Pthread_mutex_lock(pthread_mutex_t *);
+int Pthread_mutex_unlock(pthread_mutex_t *);
+int Pthread_mutex_destroy(pthread_mutex_t *);
 
 struct entry {
   int key;
@@ -16,6 +23,23 @@ struct entry {
 struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
+
+// Create a mutex for each bucket
+pthread_mutex_t mutexes[NBUCKET];
+
+void
+init_locks() {
+  for (int i = 0; i < NBUCKET; i++) {
+    Pthread_mutex_init(&mutexes[i], NULL);
+  }
+}
+
+void
+destroy_locks() {
+  for (int i = 0; i < NBUCKET; i++) {
+    Pthread_mutex_destroy(&mutexes[i]);
+  }
+}
 
 double
 now()
@@ -38,9 +62,11 @@ insert(int key, int value, struct entry **p, struct entry *n)
 static 
 void put(int key, int value)
 {
+
   int i = key % NBUCKET;
 
   // is the key already present?
+  Pthread_mutex_lock(&mutexes[i]);
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
@@ -53,19 +79,21 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
+  Pthread_mutex_unlock(&mutexes[i]);
 }
 
 static struct entry*
 get(int key)
 {
   int i = key % NBUCKET;
-
-
+  Pthread_mutex_lock(&mutexes[i]);
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
-    if (e->key == key) break;
+    if (e->key == key) {
+      break;
+    }
   }
-
+  Pthread_mutex_unlock(&mutexes[i]);
   return e;
 }
 
@@ -114,6 +142,8 @@ main(int argc, char *argv[])
   for (int i = 0; i < NKEYS; i++) {
     keys[i] = random();
   }
+  
+  init_locks();
 
   //
   // first the puts
@@ -144,4 +174,45 @@ main(int argc, char *argv[])
 
   printf("%d gets, %.3f seconds, %.0f gets/second\n",
          NKEYS*nthread, t1 - t0, (NKEYS*nthread) / (t1 - t0));
+
+  destroy_locks();
+}
+
+/* Wrappers for mutex functions. */
+
+int Pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr) {
+  int rc;
+  if ((rc = pthread_mutex_init(mutex, attr)) != 0) {
+    fprintf(stderr, "pthread_mutex_init failed %s\n", strerror(rc));
+    return rc;
+  }
+  return 0;
+}
+
+int Pthread_mutex_lock(pthread_mutex_t *mutex) {
+  int rc;
+  if ((rc = pthread_mutex_lock(mutex)) != 0) {
+    fprintf(stderr, "pthread_mutex_lock failed %s\n", strerror(rc));
+    return rc;
+  }
+  return 0;
+}
+
+
+int Pthread_mutex_unlock(pthread_mutex_t *mutex) {
+  int rc;
+  if ((rc = pthread_mutex_unlock(mutex)) != 0) {
+    fprintf(stderr, "pthread_mutex_unlock failed %s\n", strerror(rc));
+    return rc;
+  }
+  return 0;
+}
+
+int Pthread_mutex_destroy(pthread_mutex_t *mutex) {
+  int rc;
+  if ((rc = pthread_mutex_destroy(mutex)) != 0) {
+    fprintf(stderr, "pthread_mutex_destroy failed %s\n", strerror(rc));
+    return rc;
+  }
+  return 0;
 }
