@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <pthread.h>
+#include "utils.h"
 
 static int nthread = 1;
 static int round = 0;
@@ -25,12 +26,23 @@ barrier_init(void)
 static void 
 barrier()
 {
-  // YOUR CODE HERE
-  //
   // Block until all threads have called barrier() and
   // then increment bstate.round.
-  //
-  
+  Pthread_mutex_lock(&bstate.barrier_mutex); 
+  // Acknowledge a thread has reached the barrier.
+  bstate.nthread++;
+  // Check if all threads have reached the barrier.
+  if (bstate.nthread == nthread) {
+    // Reset the counter for the next barrier phase.
+    bstate.nthread = 0;
+    // All threads have reached the barrier
+    bstate.round++;
+    Pthread_cond_broadcast(&bstate.barrier_cond);
+    Pthread_mutex_unlock(&bstate.barrier_mutex);
+  } else {
+    Pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+    Pthread_mutex_unlock(&bstate.barrier_mutex);
+  }
 }
 
 static void *

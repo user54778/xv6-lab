@@ -5,15 +5,10 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <string.h>
+#include "utils.h"
 
 #define NBUCKET 5
 #define NKEYS 100000
-
-// Wrappers
-int Pthread_mutex_init(pthread_mutex_t *, const pthread_mutexattr_t *); 
-int Pthread_mutex_lock(pthread_mutex_t *);
-int Pthread_mutex_unlock(pthread_mutex_t *);
-int Pthread_mutex_destroy(pthread_mutex_t *);
 
 struct entry {
   int key;
@@ -178,41 +173,3 @@ main(int argc, char *argv[])
   destroy_locks();
 }
 
-/* Wrappers for mutex functions. */
-
-int Pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr) {
-  int rc;
-  if ((rc = pthread_mutex_init(mutex, attr)) != 0) {
-    fprintf(stderr, "pthread_mutex_init failed %s\n", strerror(rc));
-    return rc;
-  }
-  return 0;
-}
-
-int Pthread_mutex_lock(pthread_mutex_t *mutex) {
-  int rc;
-  if ((rc = pthread_mutex_lock(mutex)) != 0) {
-    fprintf(stderr, "pthread_mutex_lock failed %s\n", strerror(rc));
-    return rc;
-  }
-  return 0;
-}
-
-
-int Pthread_mutex_unlock(pthread_mutex_t *mutex) {
-  int rc;
-  if ((rc = pthread_mutex_unlock(mutex)) != 0) {
-    fprintf(stderr, "pthread_mutex_unlock failed %s\n", strerror(rc));
-    return rc;
-  }
-  return 0;
-}
-
-int Pthread_mutex_destroy(pthread_mutex_t *mutex) {
-  int rc;
-  if ((rc = pthread_mutex_destroy(mutex)) != 0) {
-    fprintf(stderr, "pthread_mutex_destroy failed %s\n", strerror(rc));
-    return rc;
-  }
-  return 0;
-}
