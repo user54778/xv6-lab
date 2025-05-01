@@ -8,6 +8,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+#define NULL ((void *)0)
 #ifdef LAB_NET
 struct mbuf;
 struct sock;
@@ -191,7 +192,6 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
-
 
 
 // stats.c

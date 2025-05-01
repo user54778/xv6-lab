@@ -9,7 +9,7 @@
 #include "riscv.h"
 #include "defs.h"
 
-#define NULL ((void *)0)
+//#define NULL ((void *)0)
 
 void freerange(void *pa_start, void *pa_end);
 int get_cpuid(); 

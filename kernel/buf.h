@@ -1,12 +1,27 @@
+// Represent a buffer for the buffer cache layer in the file system.
 struct buf {
-  int valid;   // has data been read from disk?
-  int disk;    // does disk "own" buf?
-  uint dev;
-  uint blockno;
-  struct sleeplock lock;
-  uint refcnt;
-  struct buf *prev; // LRU cache list
-  struct buf *next;
-  uchar data[BSIZE];
+  // Indicate if the buffer contains a copy of the block. 
+  // Or, has data been read from disk?
+  int valid;              
+  // Indicate if the buffer content had been handed to disk, 
+  // which may write data from disk *into* data.
+  // Or does disk "own" buf?
+  int disk;               
+  // device
+  uint dev;               
+  // block number
+  uint blockno;           
+  // a sleeplock to protect this buffer (I/O takes a long time)
+  struct sleeplock lock;  
+  // how many references the system has to this buffer
+  uint refcnt;            
+  // LRU cache list
+  struct buf *prev;       
+  // next pointer to buffer
+  struct buf *next;       
+  // time of last use
+  uint timestamp;         
+  // actual data in this buffer
+  uchar data[BSIZE];      
 };
 
