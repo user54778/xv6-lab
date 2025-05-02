@@ -99,39 +99,12 @@ binit(void)
 
   // We still want to make a LL of buffers, but on a bucket-by-bucket basis instead.
   for (b = bcache.buf; b < bcache.buf + NBUF; b++) {
-    b->refcnt = 0;
-    b->timestamp = 0;
+    b->timestamp = ticks;
     initsleeplock(&b->lock, "buffer");
     // Note that this is for initialization. In bget (or evict()), we will
     // update the correct block number and push it into the correct bucket.
     push(b, 0);
   }
-
-  /*
-  for (int i = 0; i < BUCKETS; i++) {
-    printf("%d HEAD: ", i);
-    for (b = bcache.htable[i].head.next; b != &bcache.htable[i].head; b = b->next) {
-      printf(" blockno: %d, dev: %d->", b->blockno, b->dev);
-    }
-    printf("%d HEAD: ", i);
-  }
-  */
-
-  /*
-  // Create linked list of buffers
-  bcache.head.prev = &bcache.head;
-  bcache.head.next = &bcache.head;
-  for(b = bcache.buf; b < bcache.buf+NBUF; b++){
-    b->next = bcache.head.next;
-    b->prev = &bcache.head;
-    initsleeplock(&b->lock, "buffer");
-    // bcache.head.prev would only update the bcache struct, 
-    // NOT the actual current first buf.
-    bcache.head.next->prev = b;
-    bcache.head.next = b;
-  }
-  */
-  //bprint();
 }
 
 // Look through buffer cache for block on device dev.
@@ -140,7 +113,6 @@ binit(void)
 static struct buf*
 bget(uint dev, uint blockno)
 {
-  //printf("bget");
   struct buf *b;
 
   uint id = hash(blockno);
@@ -159,51 +131,34 @@ bget(uint dev, uint blockno)
   // Release bucket lock for evict()
   release(&bcache.htable[id].bucket_lock);
 
+  //printf("b: %d\n", b->refcnt);
+
+  /*
+  int max_attempts = 5;
+  while (b == NULL && max_attempts > 0) {
+    yield();
+    b = evict();
+    max_attempts--;
+  }
+  */
+
   b = evict();
   if (b != NULL) {
-    //printf("in not null\n");
     acquire(&bcache.htable[id].bucket_lock);
+
     b->dev = dev;
     b->blockno = blockno;
     b->valid = 0;
     b->refcnt = 1;
-    b->timestamp = ticks; // ??
-    push(b, id);
-    release(&bcache.htable[id].bucket_lock);
 
+    push(b, id);
+
+    release(&bcache.htable[id].bucket_lock);
     acquiresleep(&b->lock);
     return b;
   }
 
   panic("bget: no buffers");
-  /*
-  acquire(&bcache.lock);
-
-  // Is the block already cached?
-  for(b = bcache.head.next; b != &bcache.head; b = b->next){
-    if(b->dev == dev && b->blockno == blockno){
-      b->refcnt++;
-      release(&bcache.lock);
-      //bprint();
-      acquiresleep(&b->lock);
-      return b;
-    }
-  }
-
-  // Not cached.
-  // Recycle the least recently used (LRU) unused buffer.
-  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
-    if(b->refcnt == 0) {
-      b->dev = dev;
-      b->blockno = blockno;
-      b->valid = 0;
-      b->refcnt = 1;
-      release(&bcache.lock);
-      acquiresleep(&b->lock);
-      return b;
-    }
-  }
-  */
 }
 
 // Evict a buffer from a bucket with the lowest timestamp.
@@ -217,12 +172,12 @@ evict() {
   // Make sure you avoid deadlock in that case. 
   //
   // This should recycle the LRU buffer based on timestamp instead of position.
-  //printf("evict\n");
   struct buf *b;
   uint lowest_timestamp = 0xFFFFFFFF;
   struct buf *candidate = NULL; 
 
   acquire(&bcache.lock);
+
 retry:
   // Attempt to find LRU buffer based on timestamp + refcnt
   for (int i = 0; i < BUCKETS; i++) {
@@ -232,8 +187,8 @@ retry:
       if (b->refcnt == 0) {
         // only mark as actual eviction candidate if < seen lowest_timestamp
         if (b->timestamp < lowest_timestamp) {
-          candidate = b;
           lowest_timestamp = b->timestamp;
+          candidate = b;
         }
       } 
     }
@@ -246,24 +201,33 @@ retry:
     return NULL;
   }
 
-  // Evict the candidate buffer
   uint id = hash(candidate->blockno);
   acquire(&bcache.htable[id].bucket_lock);
-  // someone changed refcnt 
-  if (candidate->refcnt > 0) {
-    release(&bcache.htable[id].bucket_lock);
-    goto retry;
-  }
+  // Instead, directly traverse the list and verify the candidate still exists
+  // to avoid a double free.
+  struct buf *curr = NULL;
 
-  //printf("removing candidate\n");
-  //printf("%d\n", candidate->blockno);
-  // remove the candidate
-  pop(candidate);
-  // release all locks in acquisition order
+  for (curr = bcache.htable[id].head.next; curr != &bcache.htable[id].head; curr = curr->next) {
+    if (curr == candidate) {
+      if (candidate->refcnt > 0) {
+        release(&bcache.htable[id].bucket_lock);
+        goto retry;
+      }
+      candidate->next->prev = candidate->prev;
+      candidate->prev->next = candidate->next;
+
+      release(&bcache.htable[id].bucket_lock);
+      release(&bcache.lock);
+      return candidate;
+    }
+  }
   release(&bcache.htable[id].bucket_lock);
   release(&bcache.lock);
-  // and finally, return relevant buffer
-  return candidate;
+  return NULL;
+  // Three Scenarios: 
+  // 1) It passes, in which it makes out of the if statement below and doesn't double free.
+  // 2) It gets stuck in the if statement, and infinitely loops.
+  // 3) It double frees.
 }
 
 // Return a locked buf with the contents of the indicated block.
@@ -304,56 +268,14 @@ brelse(struct buf *b)
   b->refcnt--;
   // no longer move to head of MRU; instead simply note timestamp for use 
   // in eviction if no one waiting
-  b->timestamp = ticks;
-  release(&bcache.htable[id].bucket_lock);
-  /*
-  acquire(&bcache.lock);
-  b->refcnt--;
   if (b->refcnt == 0) {
-    // no one is waiting for it.
-    // pop head
-    b->next->prev = b->prev;
-    b->prev->next = b->next;
-    // push head
-    b->next = bcache.head.next;
-    b->prev = &bcache.head;
-    bcache.head.next->prev = b;
-    bcache.head.next = b;
+    b->timestamp = ticks;
   }
-  release(&bcache.lock);
-  */
+  release(&bcache.htable[id].bucket_lock);
 }
-
-/*
-void
-bprint(void) {
-  struct buf *b = NULL;
-  int count = 0;
-
-  acquire(&bcache.lock);
-
-  printf("head-> ");
-
-  for (b = bcache.head.next; b != &bcache.head; b = b->next) {
-    printf(" blockno: %d, dev: %d->", b->blockno, b->dev);
-    if (++count > NBUF) {
-      printf("bprint: infinite loop\n");
-      break;
-    }
-  }
-  printf("head\n");
-  release(&bcache.lock);
-}
-*/
 
 void
 bpin(struct buf *b) {
-  /*
-  acquire(&bcache.lock);
-  b->refcnt++;
-  release(&bcache.lock);
-  */
-
   uint id = hash(b->blockno);
   acquire(&bcache.htable[id].bucket_lock);
   b->refcnt++;
@@ -362,13 +284,39 @@ bpin(struct buf *b) {
 
 void
 bunpin(struct buf *b) {
-  /*
-  acquire(&bcache.lock);
-  b->refcnt--;
-  release(&bcache.lock);
-  */
   uint id = hash(b->blockno);
   acquire(&bcache.htable[id].bucket_lock);
   b->refcnt--;
   release(&bcache.htable[id].bucket_lock);
 }
+
+
+  /*
+
+  // Evict the candidate buffer
+  //uint id = hash(candidate->blockno);
+  acquire(&bcache.htable[candidate_bucket].bucket_lock);
+  //printf("Candidate bucket and id: %d, %d\n", candidate_bucket, id);
+  // someone changed refcnt 
+  if (candidate->refcnt > 0) {
+    printf("CANDIDATE REFCNT: %d\n", candidate->refcnt);
+    release(&bcache.htable[candidate_bucket].bucket_lock);
+    //goto retry;
+    return NULL;
+  }
+
+  // NOTE: Pin the candidate during the return so another 
+  // process can't modify it during that time.
+  //candidate->refcnt = 1;
+  //printf("CANDIDATE REFCNT AFTER RETRY: %d\n", candidate->refcnt);
+  //candidate->refcnt = 1;
+
+  // remove the candidate
+  //pop(candidate);
+
+  // release all locks in acquisition order
+  release(&bcache.htable[candidate_bucket].bucket_lock);
+  release(&bcache.lock);
+  // and finally, return relevant buffer
+  return candidate;
+  */
