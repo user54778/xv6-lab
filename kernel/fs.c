@@ -172,7 +172,10 @@ bfree(int dev, uint b)
 // read or write that inode's ip->valid, ip->size, ip->type, &c.
 
 struct {
+  // An ip->lock sleep-lock protects all ip-> fields other than ref,
+  // dev, and inum.
   struct spinlock lock;
+  // An array of in-memory cop(ies) of inode
   struct inode inode[NINODE];
 } icache;
 
@@ -199,10 +202,10 @@ ialloc(uint dev, short type)
   struct buf *bp;
   struct dinode *dip;
 
-  for(inum = 1; inum < sb.ninodes; inum++){
+  for (inum = 1; inum < sb.ninodes; inum++) {
     bp = bread(dev, IBLOCK(inum, sb));
     dip = (struct dinode*)bp->data + inum%IPB;
-    if(dip->type == 0){  // a free inode
+    if (dip->type == 0) {  // a free inode
       memset(dip, 0, sizeof(*dip));
       dip->type = type;
       log_write(bp);   // mark it allocated on the disk
@@ -377,30 +380,67 @@ iunlockput(struct inode *ip)
 static uint
 bmap(struct inode *ip, uint bn)
 {
-  uint addr, *a;
+  printf("bn / NINDIRECT: %d\n", bn / NINDIRECT);
+  printf("bn: %d\n", bn);
+  printf("NINDIRECT: %d\n", NINDIRECT);
+  uint addr; // address of block/sector
+  uint *a;   // data associated with inode
   struct buf *bp;
 
-  if(bn < NDIRECT){
-    if((addr = ip->addrs[bn]) == 0)
+  // Easy case: First NDIRECT blocks are in the inode itself
+  if (bn < NDIRECT) {
+    // No block is allocated; replace with the numbers of fresh blocks,
+    // allocated on demand.
+    if ((addr = ip->addrs[bn]) == 0) {
       ip->addrs[bn] = addr = balloc(ip->dev);
+    }
     return addr;
   }
   bn -= NDIRECT;
 
-  if(bn < NINDIRECT){
+  // The next NINDIRECT blocks are listed in the indirect block
+  // at ip->addrs[NDIRECT].
+  if (bn < NINDIRECT) {
     // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0)
+    if ((addr = ip->addrs[NDIRECT]) == 0) {
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+    }
+    // Read the indirect block, and then read a block number 
+    // from the right position within the block.
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
-    if((addr = a[bn]) == 0){
+    // No block is allocated.
+    if ((addr = a[bn]) == 0) {
       a[bn] = addr = balloc(ip->dev);
+      // Mark buffer as needing to be written for this sequence to our log.
       log_write(bp);
     }
+    // Release locked buffer
     brelse(bp);
+
     return addr;
   }
 
+  // Only allocate indirect and doubly-indirect as needed still.
+  // Here we should handle a double-indirect block.
+  // Ensure we bn -= NDIRECT;
+  // if bn < NINDIRECT * NINDIRECT blocks (pointers)
+  //    Allocate double-indirect block (ip->addrs[NDIRECT+1])
+  //    Find single-indirect block (bn / NINDIRECT)
+  //    Read the double-indirect block
+  //    Allocate single-indirect block if addr == bn / NINDIRECT
+  //      log_write(..)
+  //    brelse()
+  //    Find single-indirect address within single-indirect block (bn % 256)
+  //    Read single-indirect block
+  //    Allocate data block if == 0
+  //      log_write(...)
+  //    brelse()
+  //
+  //    return addr
+
+  // If the block number exceeds NDIRECT + NINDIRECT panic.
+  // writei should prevent this from every happening.
   panic("bmap: out of range");
 }
 

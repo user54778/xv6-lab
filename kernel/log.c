@@ -29,6 +29,15 @@
 //   block C
 //   ...
 // Log appends are synchronous.
+//
+// A typical use of a log txn will look like the following:
+//    begin_op();
+//    ...
+//    bp = bread(...);
+//    bp->data[...] = ...;
+//    log_write(bp);
+//    ...
+//    end_op();
 
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
@@ -37,15 +46,17 @@ struct logheader {
   int block[LOGSIZE];
 };
 
+// Define the log structure.
 struct log {
   struct spinlock lock;
   int start;
   int size;
   int outstanding; // how many FS sys calls are executing.
   int committing;  // in commit(), please wait.
-  int dev;
+  int dev;         // device 
   struct logheader lh;
 };
+// Declare global log variable of type log.
 struct log log;
 
 static void recover_from_log(void);
@@ -70,13 +81,15 @@ install_trans(int recovering)
 {
   int tail;
 
+  // Start back of DLL and traverse backward
   for (tail = 0; tail < log.lh.n; tail++) {
-    struct buf *lbuf = bread(log.dev, log.start+tail+1); // read log block
+    struct buf *lbuf = bread(log.dev, log.start + tail + 1); // read log block
     struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
     memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
     bwrite(dbuf);  // write dst to disk
-    if(recovering == 0)
+    if (recovering == 0) {
       bunpin(dbuf);
+    }
     brelse(lbuf);
     brelse(dbuf);
   }
@@ -113,12 +126,14 @@ write_head(void)
   brelse(buf);
 }
 
+// Read the log header from disk, if committed, copy it from disk, 
+// initialize the log header blocks to 0, and clear the log.
 static void
 recover_from_log(void)
 {
   read_head();
   install_trans(1); // if committed, copy from log to disk
-  log.lh.n = 0;
+  log.lh.n = 0; // no blocks
   write_head(); // clear the log
 }
 
