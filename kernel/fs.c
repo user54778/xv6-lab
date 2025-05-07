@@ -25,6 +25,7 @@
 // there should be one superblock per disk device, but we run with
 // only one device
 struct superblock sb; 
+void free_double_block(uint, uint);
 
 // Read the super block.
 static void
@@ -380,10 +381,13 @@ iunlockput(struct inode *ip)
 static uint
 bmap(struct inode *ip, uint bn)
 {
+  /*
   printf("bn / NINDIRECT: %d\n", bn / NINDIRECT);
   printf("bn: %d\n", bn);
   printf("NINDIRECT: %d\n", NINDIRECT);
+  */
   uint addr; // address of block/sector
+  uint dbl_addr;
   uint *a;   // data associated with inode
   struct buf *bp;
 
@@ -400,6 +404,7 @@ bmap(struct inode *ip, uint bn)
 
   // The next NINDIRECT blocks are listed in the indirect block
   // at ip->addrs[NDIRECT].
+  //printf("bn: %d\n", bn);
   if (bn < NINDIRECT) {
     // Load indirect block, allocating if necessary.
     if ((addr = ip->addrs[NDIRECT]) == 0) {
@@ -416,14 +421,50 @@ bmap(struct inode *ip, uint bn)
       log_write(bp);
     }
     // Release locked buffer
+    //printf("NDIRECT - 1 + 2: %d\n", ((NDIRECT - 1) + 2));
+    brelse(bp);
+    return addr;
+  }
+  bn -= NINDIRECT;
+  if (bn < NDINDIRECT) {
+    // Essentially, for each ptr, we will have 256 ptrs to data
+    dbl_addr = bn % NINDIRECT; // NOTE: you must compute this here, 
+                               // otherwise it'll go into the dbl-indir instead
+                               // of the single-indir 
+    bn /= NINDIRECT;
+    /*
+    printf("dbl_addr: %d\n", dbl_addr);
+    printf("bn: %d\n", bn);
+    */
+
+    // find the indirect block
+    if ((addr = ip->addrs[NDIRECT + 1]) == 0) {
+      ip->addrs[NDIRECT + 1] = addr = balloc(ip->dev);
+    }
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if ((addr = a[bn]) == 0) {
+      a[bn] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+
+    // find the data block of that indirect block
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if ((addr = a[dbl_addr]) == 0) {
+      a[dbl_addr] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
     brelse(bp);
 
     return addr;
   }
 
+  panic("bmap: out of range");
   // Only allocate indirect and doubly-indirect as needed still.
   // Here we should handle a double-indirect block.
-  // Ensure we bn -= NDIRECT;
+  // Ensure we bn -= NINDIRECT;
   // if bn < NINDIRECT * NINDIRECT blocks (pointers)
   //    Allocate double-indirect block (ip->addrs[NDIRECT+1])
   //    Find single-indirect block (bn / NINDIRECT)
@@ -440,8 +481,7 @@ bmap(struct inode *ip, uint bn)
   //    return addr
 
   // If the block number exceeds NDIRECT + NINDIRECT panic.
-  // writei should prevent this from every happening.
-  panic("bmap: out of range");
+  // writei should prevent this from ever happening.
 }
 
 // Truncate inode (discard contents).
@@ -460,6 +500,7 @@ itrunc(struct inode *ip)
     }
   }
 
+  // free single-indirect
   if(ip->addrs[NDIRECT]){
     bp = bread(ip->dev, ip->addrs[NDIRECT]);
     a = (uint*)bp->data;
@@ -472,8 +513,41 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  // free double-indirect
+  if (ip->addrs[NDIRECT + 1]) {
+    bp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    a = (uint*)bp->data;
+    for (j = 0; j < NINDIRECT; j++) {
+      if (a[j]) {
+        free_double_block(ip->dev, a[j]);
+      }
+    }
+    // free double-indirect
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT + 1]);
+    ip->addrs[NDIRECT + 1] = 0;
+  }
+
   ip->size = 0;
   iupdate(ip);
+}
+
+// Free single-indirect blocks w/in a double-indirect
+// block.
+void 
+free_double_block(uint dev, uint addr) {
+  struct buf *bp;
+  int i;
+  uint *a;
+  bp = bread(dev, addr);
+  a = (uint*)bp->data;
+  for (i = 0; i < NINDIRECT; i++) {
+    if (a[i]) {
+      bfree(dev, a[i]);
+    }
+  }
+  brelse(bp);
+  bfree(dev, addr);
 }
 
 // Copy stat information from inode.
