@@ -16,6 +16,8 @@
 #include "file.h"
 #include "fcntl.h"
 
+static int traverse_path(int, char*); 
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -314,6 +316,27 @@ sys_open(void)
       end_op();
       return -1;
     }
+    // Handle symlink
+    // Must fail if file does not exist
+    // Only follow if proc does NOT specify O_NOFOLLOW
+    if (!(omode & O_NOFOLLOW) && ip->type == T_SYMLINK) {
+      //printf("handle symlink\n");
+      if (traverse_path(10, ip->target) != 0) {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      } else {
+        iunlockput(ip);
+        // file does not exist (deleted after found its path by other thread)
+        if ((ip = namei(ip->target)) == 0) {
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+        // assumes lock is held later down this function
+        ilock(ip);
+      }
+    }
   }
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
@@ -480,6 +503,82 @@ sys_pipe(void)
     p->ofile[fd1] = 0;
     fileclose(rf);
     fileclose(wf);
+    return -1;
+  }
+  return 0;
+}
+
+// Create a new symbolic link at path that refers to target.
+uint64
+sys_symlink(void)
+{
+  // Ex: symlink("/path/foo.txt", "/path/jdd/bar.txt")
+  // Creates a symlink named bar.txt that POINTS TO the file foo.txt at /path/foo.txt
+  char target[MAXPATH]; // what symlink will pnt to
+  char path[MAXPATH];   // path and filename of symlink created
+  struct inode *ip;
+
+  // Start txn since this can be concurrent
+  begin_op();
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0) {
+    end_op();
+    return -1;
+  }
+
+  // Determine if this is a valid path, and get 10 attempts
+  // at attempting to recursively resolve the pathname.
+  // Modifies path in-place to path.
+  if (traverse_path(10, target) < 0) {
+    end_op();
+    return -1;
+  }
+
+  // Create the symlink
+  if ((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    //printf("failed\n");
+    end_op();
+    return -1;
+  }
+
+  safestrcpy(ip->target, target, MAXPATH);
+
+  // catch stray ilock calls
+  iunlockput(ip);
+  end_op();
+
+  return 0;
+}
+
+
+// Traverse path with a maximum recursive depth allowed of maxdepth.
+// Returns 0  on success.
+// Returns -1 on failure to resole pathname.
+// Returns 1  if namei fails to return an inode.
+static int
+traverse_path(int maxdepth, char* path) {
+  struct inode *ip;
+  while (maxdepth) {
+    if ((ip = namei(path)) == 0) {
+      //printf("fail early\n");
+      return 1;
+    } 
+    // Need to lock ip
+    ilock(ip);
+    //printf("%d\n", ip->type);
+    if (ip->type == T_SYMLINK) {
+      //printf("inside\n");
+      // Modify path s.t. target == path
+      safestrcpy(path, ip->target, MAXPATH);
+      iunlockput(ip);
+      // Continue iterating to resolve path
+    } else {
+      // not a symlink; terminate
+      iunlockput(ip);
+      break;
+    }
+    maxdepth--;
+  }        
+  if (maxdepth <= 0) {
     return -1;
   }
   return 0;
