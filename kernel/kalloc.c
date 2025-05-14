@@ -8,6 +8,7 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#include <sys/types.h>
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -23,12 +24,82 @@ struct {
   struct run *freelist;
 } kmem;
 
+// refcnt is a per-page data structure
+// that tracks how many references a page has.
+// It is protected by a spinlock.
+struct refcnt {
+  struct spinlock lock;
+  int count;
+};
+
+// A global array of refcnts that is indexed by the PFN.
+// We index this array with the page's physical address / pgsize
+// Our global array is simply the size of all physical memory that could be allocated.
+struct refcnt global_refcnt[PHYSTOP / PGSIZE];
+
+// FIXME: There is likely to be a lot of unnecessary locking that will result in lower performance
+
+// Initialize the global_refcnt array
+void ref_init() {
+  for (int i = 0; i < PHYSTOP / PGSIZE; i++) {
+    global_refcnt[i].count = 0;
+    initlock(&global_refcnt[i].lock, "cow_refcnt"); 
+  }
+}
+
+// Increment the refcnt
+void ref_incr(uint64 pa) {
+  int index = PA2IDX(pa);
+  acquire(&global_refcnt[index].lock);
+  global_refcnt[index].count++;
+  printf("Incrementing %d with new count %d\n", index, global_refcnt[index].count);
+  release(&global_refcnt[index].lock);
+}
+
+// Decrement the refcnt
+int ref_decr(uint64 pa) {
+  int index = PA2IDX(pa);
+  int ret;
+  acquire(&global_refcnt[index].lock);
+  if ((global_refcnt[index].count) < 0) {
+    panic("ref_decr: negative refcnt");
+  } 
+  // Don't decrement non-relevant pages
+  if ((global_refcnt[index].count) == 0) {
+    release(&global_refcnt[index].lock);
+    return 0;
+  }
+  global_refcnt[index].count--;
+  printf("Decrementing %d with new count %d\n", index, global_refcnt[index].count);
+  ret = global_refcnt[index].count;
+  release(&global_refcnt[index].lock);
+
+  return ret;
+}
+
+void ref_reset(uint64 pa) {
+  int index = PA2IDX(pa);
+  acquire(&global_refcnt[index].lock);
+  global_refcnt[index].count = 0;
+  release(&global_refcnt[index].lock);
+}
+
+int get_refcnt(uint64 pa) {
+  int index = PA2IDX(pa);
+  int refcnt;
+  acquire(&global_refcnt[index].lock);
+  refcnt = global_refcnt[index].count;
+  release(&global_refcnt[index].lock);
+  return refcnt;
+}
+
 
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+  ref_init();
 }
 
 void
@@ -51,6 +122,11 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  // not sure?
+  if (ref_decr((uint64)pa) > 0) {
+    return;
+  }
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -77,7 +153,10 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if (r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
+    // not sure?
+    ref_incr((uint64)r);
+  }
   return (void*)r;
 }

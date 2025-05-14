@@ -242,7 +242,7 @@ static inline void sfence_vma() {
 #define PTE_W (1L << 2)
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // 1 -> user can access
-//#define PTE_RSW0 (1L << 8) // NOTE: COW page
+#define PTE_C (1L << 8) // 1 -> COW page
 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
@@ -251,24 +251,15 @@ static inline void sfence_vma() {
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 
-/*
+// equivalent
+//#define PA2IDX(pa) (((uint64)(pa)) / PGSIZE)
+#define PA2IDX(pa) (((uint64)pa) >> 12)
+
 // extract the three 9-bit page table indices from a virtual address.
 #define PXMASK 0x1FF // 9 bits
 #define PXSHIFT(level) (PGSHIFT + (9 * (level)))
 #define PX(level, va) ((((uint64)(va)) >> PXSHIFT(level)) & PXMASK)
 
-// RSW bit positions
-#define PTE_RSW_SHIFT 8                     // starts at bit 8
-#define PTE_RSW_MASK (0x7 << PTE_RSW_SHIFT) // Grab rsw bits
-
-// Extract RSW bits from a PTE
-#define PTE_GET_RSW(pte) (((pte) >> PTE_RSW_SHIFT) & 0x7)
-
-// Clear bits in RSW 
-#define PTE_CLEAR_RSW(pte) ((pte) & ~PTE_RSW_MASK)
-// Set val bits in RSW
-#define PTE_SET_RSW(pte, val) ((PTE_CLEAR_RSW) | (((val) & 0x7) << PTE_RSW_SHIFT))
-*/
 
 // one beyond the highest possible virtual address.
 // MAXVA is actually one bit less than the max allowed by

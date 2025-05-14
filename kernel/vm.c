@@ -308,25 +308,52 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
-  pte_t *pte;
+  pte_t *parent_pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  //char *mem; Not needed; not kallocing here
 
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
+  for (i = 0; i < sz; i += PGSIZE) {
+    if ((parent_pte = walk(old, i, 0)) == 0) {
       panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
+    }
+    if ((*parent_pte & PTE_V) == 0) {
       panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+    }
+    // How do we modify this portion to map physical pages into child w/out allocation?
+    // No kalloc for one.
+    // Mapping JUST physical pages.
+    pa = PTE2PA(*parent_pte);
+    flags = PTE_FLAGS(*parent_pte);
+    //printf("PA2IDX: %d\n", PA2IDX(pa));
+    /*
+    if ((mem = kalloc()) == 0) {
       goto err;
+    }
+    // copy mem from src to dest, of size PGSIZE bytes 
+    // src = pa, dst = mem
     memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+    */
+    /*
+    if (mappages(new, i, PGSIZE, (uint64)mem, flags) != 0) {
       kfree(mem);
       goto err;
     }
+    */
+    // 1) We want to point c to the pa's of p.
+    // So, install new PTE mappings into the new page table
+    if (mappages(new, i, PGSIZE, pa, flags) != 0) {
+      goto err;
+    }
+    pte_t *child_pte;
+    if ((child_pte = walk(new, i, 0)) == 0) {
+      panic("uvmcopy: child pte should exist");
+    }
+    // 2) Clear write bits in p and c
+    *parent_pte &= ~PTE_W;
+    *child_pte &= ~PTE_W;
+    uint64 child_pa = PTE2PA(*child_pte);
+    ref_incr(child_pa);
   }
   return 0;
 
@@ -356,6 +383,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
+  // TODO: modify to use same scheme as page faults when encountering a COW page
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);

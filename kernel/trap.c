@@ -65,6 +65,18 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (r_scause() == 15) {
+    // Allocate new page with kalloc
+    // Copy old page into new page
+    // Install new page in PTE with PTE_W set.
+    printf("trapped to cow page\n");
+    //TODO: implement me
+    //
+    //uint64 va = r_stval();
+    // Is the faulting va a COW page?
+    // If it is, allocate a new page with kalloc, cp the old pg into new pg,
+    // install new pg in pte with w-bit.
+    p->killed = 1;
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
