@@ -349,11 +349,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if ((child_pte = walk(new, i, 0)) == 0) {
       panic("uvmcopy: child pte should exist");
     }
-    // 2) Clear write bits in p and c
-    *parent_pte &= ~PTE_W;
-    *child_pte &= ~PTE_W;
-    uint64 child_pa = PTE2PA(*child_pte);
-    ref_incr(child_pa);
+    // 2) Clear write bits in p and c, and set cow bits in p and c.
+    if (*parent_pte & PTE_W) {
+      *parent_pte &= ~PTE_W;
+      *child_pte &= ~PTE_W;
+      *parent_pte |= PTE_C;
+      *child_pte |= PTE_C;
+    }
+    //uint64 child_pa = PTE2PA(*child_pte);
+    ref_incr(PTE2PA(*child_pte)); // NOTE: 
   }
   return 0;
 
@@ -383,15 +387,16 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
-  // TODO: modify to use same scheme as page faults when encountering a COW page
-  while(len > 0){
+  while (len > 0) {
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if (pa0 == 0) {
       return -1;
+    }
     n = PGSIZE - (dstva - va0);
-    if(n > len)
+    if (n > len) {
       n = len;
+    }
     memmove((void *)(pa0 + (dstva - va0)), src, n);
 
     len -= n;
@@ -468,3 +473,56 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+// Given a PTE of a COW page, allocate a new physical page
+// for it, update the PTE metadata, and return its address.
+// Assumes it is a valid pte as it should only be called after
+// checking if the pte is from a COW page.
+// Returns 0 if it fails to allocate
+// Returns 1 on success.
+/*
+void *
+cow_alloc(pte_t *pte) {
+  char *new_page;
+  if ((new_page = (char *)kalloc()) == 0) {
+    return 0;
+  }
+  uint64 old_pa = PTE2PA(*pte);
+  memmove(new_page, (char*)old_pa, PGSIZE);
+  kfree((void*)old_pa);
+
+  *pte &= ~PTE_C;
+  *pte |= PTE_W;
+  *pte = PA2PTE(old_pa) | PTE_FLAGS(*pte);
+
+  return pte;
+  */
+  /*
+  if (*pte == 0 || (*pte & PTE_V) == 0) {
+    return 0;
+  }
+  if ((*pte & PTE_C) == 0) {
+    return 0;
+  }
+
+  uint64 pa;
+  if ((pa = (uint64)kalloc()) == 0) {
+    return 0;
+  } 
+
+  uint64 old_pa = PTE2PA(*pte);
+  // Copy memory from the old page to the new page
+  memmove((void *)pa, (void *)old_pa, PGSIZE);
+  kfree((void *)old_pa); // Decrement its refcnt/free its page if == 0
+  
+  // update the pte to point to the new page with 
+  // w set and c cleared
+  // *pte = PA2PTE(pa) | (PTE_FLAGS(*pte) & ~PTE_C) | PTE_W;
+  *pte &= ~PTE_C;
+  *pte |= PTE_W;
+  *pte = PA2PTE(pa) | PTE_FLAGS(*pte);
+
+  return pte;
+}
+*/
+

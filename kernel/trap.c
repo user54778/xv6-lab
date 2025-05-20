@@ -3,11 +3,13 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
-#include "proc.h"
 #include "defs.h"
+#include "proc.h"
 
 struct spinlock tickslock;
 uint ticks;
+
+static void * is_cow_page(pagetable_t, uint64); 
 
 extern char trampoline[], uservec[], userret[];
 
@@ -70,13 +72,62 @@ usertrap(void)
     // Copy old page into new page
     // Install new page in PTE with PTE_W set.
     printf("trapped to cow page\n");
-    //TODO: implement me
-    //
     //uint64 va = r_stval();
     // Is the faulting va a COW page?
     // If it is, allocate a new page with kalloc, cp the old pg into new pg,
     // install new pg in pte with w-bit.
+    uint64 va = r_stval();
+    pte_t *pte;
+    if ((pte = is_cow_page(p->pagetable, va)) <= 0) {
+      p->killed = 1;
+    } else if (cow_alloc(pte) != 0) {
+      p->killed = 1;
+    }
+    /*
+    pte_t *pte;
+    if ((pte = is_cow_page(p->pagetable, va)) <= 0) {
+      p->killed = 1;
+    } else if ((pte = cow_alloc(pte)) == 0) {
+      p->killed = 1;
+    }
+    printf("PTE: %p\n", *pte);
+    */
+    /*
+    int cow_ret = is_cow_page(p->pagetable, va);
+    if (cow_ret < 0) {
+      p->killed = 1;
+    } else if (cow_ret == 0) {
+      panic("usertrap: writable page on store pagefault");
+    } else {
+      pte_t *pte = walk(p->pagetable, va, 0);
+      if (cow_alloc(pte) == 0) {
+        p->killed = 1;
+      }
+    }
+    */
+    /*
+    if (is_cow_page(p->pagetable, va) != 1) {
+      p->killed = 1;
+    } else {
+      pte_t *pte = walk(p->pagetable, va, 0);
+      if (cow_alloc(pte) == 0) {
+        p->killed = 1;
+      }
+    }
+    */
+    /*
+    } else if ((pa = (uint64)kalloc()) == 0) {
+      p->killed = 1;
+    } else {
+      printf("We're a COW page, and we've kalloc'ed!\n");
+      //
+      // Copy the old page into the new page
+      // Install the new page in the PTE with PTE_W set
+      // Free page/decr refcnt to old page
+    }
+    */
     p->killed = 1;
+
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -94,6 +145,7 @@ usertrap(void)
 
   usertrapret();
 }
+
 
 //
 // return to user space
@@ -230,3 +282,60 @@ devintr()
   }
 }
 
+int
+cow_alloc(pte_t *pte) {
+  // check validity of pte as sanity check
+  if (*pte == 0 || (*pte & PTE_V) == 0) {
+    return -1;
+  }
+  if ((*pte & PTE_C) == 0) {
+    return -1;
+  }
+  printf("PTE_C: %d\n", *pte & PTE_C);
+  uint64 old_pa = PTE2PA(*pte); 
+
+  char *mem;
+  if ((mem = kalloc()) == 0) {
+    return -1;
+  }
+
+  memmove(mem, (char*)old_pa, PGSIZE);
+  kfree((void*)old_pa);
+
+  *pte &= ~PTE_C;
+  *pte |= PTE_W;
+  *pte = PA2PTE(old_pa) | PTE_FLAGS(*pte);
+
+  return 0;
+}
+
+// Determine if a given virtual address from a pagetable
+// is a COW page.
+// Returns -1 if the page does not exist or error.
+// Returns 0 if the page exists but is NOT a COW page.
+// Return the pte if its a cow page
+static void *
+is_cow_page(pagetable_t pagetable, uint64 va) {
+  pte_t *pte;
+
+  if (va >= MAXVA) {
+    return (void*)-1;
+  }
+  va = PGROUNDDOWN(va);
+
+  if ((pte = walk(pagetable, va, 0)) == 0) {
+    return (void*)-1;
+  }
+
+  // Check page existence
+  if ((*pte & PTE_V) == 0) {
+    return (void*)-1;
+  }
+  // Check if a COW page
+  if ((*pte & PTE_C) && !(*pte & PTE_W)) {
+    printf("valid cow page\n");
+    return pte;
+  }
+
+  return 0;
+}

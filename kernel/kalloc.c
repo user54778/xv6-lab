@@ -37,8 +37,6 @@ struct refcnt {
 // Our global array is simply the size of all physical memory that could be allocated.
 struct refcnt global_refcnt[PHYSTOP / PGSIZE];
 
-// FIXME: There is likely to be a lot of unnecessary locking that will result in lower performance
-
 // Initialize the global_refcnt array
 void ref_init() {
   for (int i = 0; i < PHYSTOP / PGSIZE; i++) {
@@ -52,7 +50,7 @@ void ref_incr(uint64 pa) {
   int index = PA2IDX(pa);
   acquire(&global_refcnt[index].lock);
   global_refcnt[index].count++;
-  printf("Incrementing %d with new count %d\n", index, global_refcnt[index].count);
+  //printf("Incrementing %d with new count %d\n", index, global_refcnt[index].count);
   release(&global_refcnt[index].lock);
 }
 
@@ -70,13 +68,14 @@ int ref_decr(uint64 pa) {
     return 0;
   }
   global_refcnt[index].count--;
-  printf("Decrementing %d with new count %d\n", index, global_refcnt[index].count);
+  //printf("Decrementing %d with new count %d\n", index, global_refcnt[index].count);
   ret = global_refcnt[index].count;
   release(&global_refcnt[index].lock);
 
   return ret;
 }
 
+// not needed?
 void ref_reset(uint64 pa) {
   int index = PA2IDX(pa);
   acquire(&global_refcnt[index].lock);
@@ -123,10 +122,11 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // not sure?
+  // Don't free if refcnt > 0
   if (ref_decr((uint64)pa) > 0) {
     return;
   }
+  ref_reset((uint64)pa);
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -155,8 +155,9 @@ kalloc(void)
 
   if (r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
-    // not sure?
-    ref_incr((uint64)r);
+    //ref_incr((uint64)r);
+    int index = PA2IDX((uint64)r);
+    global_refcnt[index].count = 1;
   }
   return (void*)r;
 }
