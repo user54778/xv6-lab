@@ -150,6 +150,7 @@ void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
+void*           is_cow_page(pagetable_t, uint64); 
 int             cow_alloc(pte_t *);
 
 // uart.c

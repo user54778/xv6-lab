@@ -126,7 +126,7 @@ kfree(void *pa)
   if (ref_decr((uint64)pa) > 0) {
     return;
   }
-  ref_reset((uint64)pa);
+  //ref_reset((uint64)pa);
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -155,9 +155,9 @@ kalloc(void)
 
   if (r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
-    //ref_incr((uint64)r);
-    int index = PA2IDX((uint64)r);
-    global_refcnt[index].count = 1;
+    ref_incr((uint64)r);
+    //int index = PA2IDX((uint64)r);
+    //global_refcnt[index].count = 1;
   }
   return (void*)r;
 }

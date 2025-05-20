@@ -389,6 +389,19 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while (len > 0) {
     va0 = PGROUNDDOWN(dstva);
+    void* pte;
+    pte = is_cow_page(pagetable, va0);
+    if ((uint64)pte == -1) {
+      //printf("dfjkjdf");
+      return -1;
+    } else if ((uint64)pte == 0) {
+      // do nothing
+    } else {
+      pte = (pte_t*)pte;
+      if (cow_alloc(pte) == 0) {
+        return -1;
+      }
+    }
     pa0 = walkaddr(pagetable, va0);
     if (pa0 == 0) {
       return -1;

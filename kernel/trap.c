@@ -9,8 +9,6 @@
 struct spinlock tickslock;
 uint ticks;
 
-static void * is_cow_page(pagetable_t, uint64); 
-
 extern char trampoline[], uservec[], userret[];
 
 // in kernelvec.S, calls kerneltrap().
@@ -71,7 +69,7 @@ usertrap(void)
     // Allocate new page with kalloc
     // Copy old page into new page
     // Install new page in PTE with PTE_W set.
-    printf("trapped to cow page\n");
+    //printf("trapped to cow page\n//");
     //uint64 va = r_stval();
     // Is the faulting va a COW page?
     // If it is, allocate a new page with kalloc, cp the old pg into new pg,
@@ -80,7 +78,7 @@ usertrap(void)
     pte_t *pte;
     if ((pte = is_cow_page(p->pagetable, va)) <= 0) {
       p->killed = 1;
-    } else if (cow_alloc(pte) != 0) {
+    } else if (cow_alloc(pte) != 1) {
       p->killed = 1;
     }
     /*
@@ -126,7 +124,7 @@ usertrap(void)
       // Free page/decr refcnt to old page
     }
     */
-    p->killed = 1;
+    //p->killed = 1;
 
   } else if((which_dev = devintr()) != 0){
     // ok
@@ -282,21 +280,25 @@ devintr()
   }
 }
 
+// Allocate a new COW page, copying the old page to the new page,
+// installing it in the PTE and clearing the PTE_C and setting the 
+// PTE_W bits.
+// Returns 0 if the pte is invalid or kalloc() fails.
+// Returns 1 on success.
 int
 cow_alloc(pte_t *pte) {
   // check validity of pte as sanity check
   if (*pte == 0 || (*pte & PTE_V) == 0) {
-    return -1;
+    return 0;
   }
   if ((*pte & PTE_C) == 0) {
-    return -1;
+    return 0;
   }
-  printf("PTE_C: %d\n", *pte & PTE_C);
   uint64 old_pa = PTE2PA(*pte); 
 
   char *mem;
   if ((mem = kalloc()) == 0) {
-    return -1;
+    return 0;
   }
 
   memmove(mem, (char*)old_pa, PGSIZE);
@@ -304,9 +306,10 @@ cow_alloc(pte_t *pte) {
 
   *pte &= ~PTE_C;
   *pte |= PTE_W;
-  *pte = PA2PTE(old_pa) | PTE_FLAGS(*pte);
+   // had dumb copy-paste error where pte was pointing back to old_pa
+  *pte = PA2PTE((uint64)mem) | PTE_FLAGS(*pte);
 
-  return 0;
+  return 1;
 }
 
 // Determine if a given virtual address from a pagetable
@@ -314,7 +317,7 @@ cow_alloc(pte_t *pte) {
 // Returns -1 if the page does not exist or error.
 // Returns 0 if the page exists but is NOT a COW page.
 // Return the pte if its a cow page
-static void *
+void *
 is_cow_page(pagetable_t pagetable, uint64 va) {
   pte_t *pte;
 
@@ -333,9 +336,10 @@ is_cow_page(pagetable_t pagetable, uint64 va) {
   }
   // Check if a COW page
   if ((*pte & PTE_C) && !(*pte & PTE_W)) {
-    printf("valid cow page\n");
+    //printf("valid cow page\n");
     return pte;
   }
 
+  // not a cow page
   return 0;
 }
