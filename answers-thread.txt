@@ -1,0 +1,3 @@
+1. The breakpoint may or may not trigger dependent on if a context switch occurs 
+and another CPU starts running that same line of code. tldr: breakpoints are on memory locations,
+and not process-specific instances.

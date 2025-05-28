@@ -3,12 +3,11 @@
 	/*
          * save the old thread's registers,
          * restore the new thread's registers.
-         * Only callee registers.
          */
 
 	.globl thread_switch
-        // literally copy/paste from swtch.S
 thread_switch:
+	/* YOUR CODE HERE */
         sd ra, 0(a0)
         sd sp, 8(a0)
         sd s0, 16(a0)
@@ -38,5 +37,4 @@ thread_switch:
         ld s9, 88(a1)
         ld s10, 96(a1)
         ld s11, 104(a1)
-        
-        ret
+	ret    /* return to ra */
