@@ -28,6 +28,21 @@ struct cpu {
 
 extern struct cpu cpus[NCPU];
 
+// Virtual Memory Area.
+// A data structure that tracks a region of memory-mapped memory.
+// Tracks where in memory this region starts and ends,
+// the protection bits for the mmap along with the flags for it,
+// a file pointer to the file being mapped, and a boolean flag
+// that states if this current VMA region is actually in use.
+struct vma {
+  uint64 start_addr;
+  uint64 end_addr;
+  uint64 prot;
+  uint64 flags;
+  struct file *file;
+  uint64 in_use;
+};
+
 // per-process data for the trap handling code in trampoline.S.
 // sits in a page by itself just under the trampoline page in the
 // user page table. not specially mapped in the kernel page table.
@@ -103,4 +118,7 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  // NEW
+  struct vma vma_table[NVMA];  // Table of VMAs
+  uint64 cur_mmap_region;      // Where the current mmap region should start. Default at MAXVA - 2 * PGSIZE.
 };

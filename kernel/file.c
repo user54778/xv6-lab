@@ -14,15 +14,25 @@
 #include "proc.h"
 
 struct devsw devsw[NDEV];
+
 struct {
   struct spinlock lock;
   struct file file[NFILE];
 } ftable;
 
+struct {
+  struct spinlock lock;
+  struct vma vma[NVMA];
+} vmatable;
+
 void
 fileinit(void)
 {
   initlock(&ftable.lock, "ftable");
+}
+
+void vmainit(void) {
+  initlock(&vmatable.lock, "vmatable");
 }
 
 // Allocate a file structure.
@@ -40,6 +50,24 @@ filealloc(void)
     }
   }
   release(&ftable.lock);
+  return 0;
+}
+
+struct vma*
+vmaalloc(void)
+{
+  struct vma *v;
+
+  acquire(&vmatable.lock);
+  // Scan vma table for unreferenced vma and return a new one.
+  for (v = vmatable.vma; v < vmatable.vma + NVMA; v++) {
+    if (!v->in_use) {
+      v->in_use = 1;
+      release(&vmatable.lock);
+      return v;
+    }
+  }
+  release(&vmatable.lock);
   return 0;
 }
 
@@ -80,6 +108,14 @@ fileclose(struct file *f)
     iput(ff.ip);
     end_op();
   }
+}
+
+void
+vmadealloc(struct vma* v) 
+{
+  acquire(&vmatable.lock);
+  memset(v, 0, sizeof(*v));
+  release(&vmatable.lock);
 }
 
 // Get metadata about file f.
@@ -179,4 +215,5 @@ filewrite(struct file *f, uint64 addr, int n)
 
   return ret;
 }
+
 

@@ -27,12 +27,16 @@ int             exec(char*, char**);
 
 // file.c
 struct file*    filealloc(void);
+struct vma*     vmaalloc(void);
 void            fileclose(struct file*);
+void            vmadealloc(struct vma*);
 struct file*    filedup(struct file*);
 void            fileinit(void);
+void            vmainit(void); 
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+
 
 // fs.c
 void            fsinit(int);
