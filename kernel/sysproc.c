@@ -96,15 +96,3 @@ sys_uptime(void)
   return xticks;
 }
 
-uint64
-sys_mmap(void)
-{
-  panic("mmap");
-}
-
-
-uint64
-sys_munmap(void)
-{
-  panic("munmap");
-}

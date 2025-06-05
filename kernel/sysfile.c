@@ -484,3 +484,76 @@ sys_pipe(void)
   }
   return 0;
 }
+
+
+uint64
+sys_mmap(void)
+{
+  //char *p = mmap(0, PGSIZE*2, PROT_READ, MAP_PRIVATE, fd, 0);
+  // Only length -> fd are used
+  //uint64 addr; // ASSUME == 0
+  int length;
+  int prot;
+  int flags;
+  int fd;
+  //int offset; // ASSUME == 0
+  struct file *f;
+
+  if (argint(1, &length) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0) {
+    return 0xffffffffffffffff;
+  }
+
+  // mmap shouldn't allow read/write mapping of a file that is read-only.
+  if (!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED)) {
+    return 0xffffffffffffffff;
+  }
+
+  // 1) Find where the mmap region should start
+  struct proc *p = myproc();
+  uint64 vma_start_region = p->cur_mmap_region - PGROUNDUP(length);
+  printf("vma_start_region: %d\n", vma_start_region);
+
+  // 2) Allocate a vma from the vma table
+  struct vma *v = 0;
+  for (int i = 0; i < NVMA; i++) {
+    if (!p->vma_table[i].in_use) {
+      //printf("NOT IN USE BEFORE: %d\n", i);
+      v = &p->vma_table[i];
+      v->in_use = 1;
+      break;
+    }
+  }
+  if (!v) {
+    return 0xffffffffffffffff;
+  }
+
+  // 3) Initialize this vma object
+  v->start_addr = vma_start_region;
+  v->end_addr = p->cur_mmap_region;
+  v->length = length;
+  v->prot = prot;
+  v->flags = flags;
+  v->file = filedup(f); // Increase file refcnt
+  
+  p->cur_mmap_region = vma_start_region;
+
+  printf("f: %p\n", f);
+  printf("Mmap region: start_addr: %d, end_addr: %d, len: %d, prot: %d, flags: %d file: %p\n", 
+         v->start_addr, v->end_addr, v->length, v->prot, v->flags, v->file);
+  /*
+  for (int i = 0; i < NVMA; i++) {
+    if (!p->vma_table[i].in_use) {
+      printf("NOT IN USE AFTER: %d\n", i);
+    }
+  }
+  */
+
+  return vma_start_region;
+}
+
+
+uint64
+sys_munmap(void)
+{
+  panic("munmap");
+}

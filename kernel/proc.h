@@ -37,6 +37,7 @@ extern struct cpu cpus[NCPU];
 struct vma {
   uint64 start_addr;
   uint64 end_addr;
+  uint64 length;
   uint64 prot;
   uint64 flags;
   struct file *file;

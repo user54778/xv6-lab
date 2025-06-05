@@ -65,6 +65,19 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (r_scause() == 13 || r_scause() == 15) {
+    printf("MMAP\n");
+    // Allocate a page of memory (kalloc())
+    // Read 4096 bytes, i.e., a page of the file into our alloc'd page  (readi())
+    //    This read should be performed on the file inode, i.e., readi
+    //    Remember that before calling readi we need to lock/unlock the inode passed in (ilock()/iunlock())
+    //    Also need to start a txn(?) -> No, we're only reading from disk (not writing)
+    // Map that page into the user address space (mappages())
+    //
+    // Later on, repeat this process for the entire length of the file, writing back MAP_SHARED
+    // pages the program actually modified.
+    // This should use the dirty bit (PTE_D).
+    p->killed = 1;
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

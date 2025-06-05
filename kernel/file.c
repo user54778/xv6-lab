@@ -20,10 +20,12 @@ struct {
   struct file file[NFILE];
 } ftable;
 
+/*
 struct {
   struct spinlock lock;
   struct vma vma[NVMA];
 } vmatable;
+*/
 
 void
 fileinit(void)
@@ -31,9 +33,11 @@ fileinit(void)
   initlock(&ftable.lock, "ftable");
 }
 
+/*
 void vmainit(void) {
   initlock(&vmatable.lock, "vmatable");
 }
+*/
 
 // Allocate a file structure.
 struct file*
@@ -53,6 +57,7 @@ filealloc(void)
   return 0;
 }
 
+/*
 struct vma*
 vmaalloc(void)
 {
@@ -70,6 +75,7 @@ vmaalloc(void)
   release(&vmatable.lock);
   return 0;
 }
+*/
 
 // Increment ref count for file f.
 struct file*
@@ -110,6 +116,7 @@ fileclose(struct file *f)
   }
 }
 
+/*
 void
 vmadealloc(struct vma* v) 
 {
@@ -117,6 +124,7 @@ vmadealloc(struct vma* v)
   memset(v, 0, sizeof(*v));
   release(&vmatable.lock);
 }
+*/
 
 // Get metadata about file f.
 // addr is a user virtual address, pointing to a struct stat.
