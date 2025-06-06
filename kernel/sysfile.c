@@ -555,5 +555,58 @@ sys_mmap(void)
 uint64
 sys_munmap(void)
 {
-  panic("munmap");
+  // Find the VMA for the address range and unmap the specified pages
+  // munmap(addr, length)
+  //  Removes mmap mappings in the indicated address range.
+  //  Assume it unmaps at the start, end, or entire region.
+  // The hint is to use uvmunmap. 
+  // If munmap removes ALL pages of an mmap call, it should DECREMENT the refcnt of the struct file.
+  // If an unmapped page has been MODIFIED and the file is MAP_SHARED, write the page BACK to the file.
+  // Use filewrite as inspiration.
+  //
+  uint64 va;
+  int len;
+
+  if (argaddr(0, &va) < 0 || argint(1, &len) < 0) {
+    return -1;
+  }
+  printf("va: %p\n", va);
+  printf("len: %d\n", len);
+
+  struct proc *p = myproc();
+  struct vma *v = 0;
+  for (int i = 0; i < NVMA; i++) {
+    // Unmap the entire region
+    if (p->vma_table[i].in_use && (p->vma_table[i].start_addr <= va && p->vma_table[i].end_addr > va)) {
+      printf("hi\n");
+      v = &p->vma_table[i];
+      break;
+    } 
+  }
+
+  if (!v) {
+    return -1;
+  }
+
+  va = PGROUNDDOWN(va);
+  int npages = PGROUNDUP(len) / PGSIZE;
+
+  if (v->flags & MAP_SHARED) {
+    printf("IMPLEMENT ME\n");
+  }
+  printf("vi: %d\n", vi);
+
+  // void uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+  // TODO: MODIFY ME TO UNMAP SPECIFIED MMAP ADDRESS SPACE
+  uvmunmap(p->pagetable, va, npages, 1);
+  v->in_use = 0;
+  fileclose(v->file);
+  /*
+  int
+  filewrite(struct file *f, uint64 addr, int n)
+  */
+  // TODO: Check if unmapped page is modified AND MAP_SHARED for file is set, write
+  // the page back to the file
+  // Use filewrite() as inspiration.
+  return 0;
 }

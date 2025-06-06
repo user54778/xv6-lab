@@ -5,6 +5,12 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+/*
+#include "sleeplock.h"
+#include "file.h"
+*/
+
 
 struct spinlock tickslock;
 uint ticks;
@@ -74,10 +80,58 @@ usertrap(void)
     //    Also need to start a txn(?) -> No, we're only reading from disk (not writing)
     // Map that page into the user address space (mappages())
     //
+    // Note that readi needs a destination to write to its output.
+    // Thus, the order for function calls should go as:
+    // kalloc()
+    // memset() phys page
+    // mappages() map phys page -> vaddr
+    // readi()
+    // Extra??? Below
     // Later on, repeat this process for the entire length of the file, writing back MAP_SHARED
     // pages the program actually modified.
     // This should use the dirty bit (PTE_D).
-    p->killed = 1;
+    uint64 fault_addr = r_stval();
+    printf("Fault address: %p\n", &fault_addr);
+    struct proc *p = myproc();
+    struct vma *v = 0;
+    for (int i = 0; i < NVMA; i++) {
+      if (p->vma_table[i].in_use && p->vma_table[i].start_addr <= fault_addr && fault_addr <= p->vma_table[i].end_addr) {
+        v = &p->vma_table[i];
+        break;
+      }
+    }
+    if (!v) {
+      printf("usertrap(): can't find vma mapping\n");
+      p->killed = 1;
+    }
+
+    char *mem = kalloc();
+    if (mem == 0) {
+      printf("usertrap(): kalloc failed\n");
+      p->killed = 1;
+    } else {
+      memset(mem, 0, PGSIZE);
+      int flags = PTE_U;
+      if (v->prot & PROT_WRITE) {
+        flags |= PTE_W;
+      }
+      if (v->prot & PROT_READ) {
+        flags |= PTE_R;
+      }
+
+      fault_addr = PGROUNDDOWN(fault_addr); 
+      if (mappages(p->pagetable, fault_addr, PGSIZE, (uint64)mem, flags) != 0) {
+        kfree(mem);
+        printf("usertrap(): mappages failed\n");
+        p->killed = 1;
+      }
+
+      // This may not be correct, however, is for now not causing issues.
+      // Ideally we calculate the correct offset in the file based on the page fault.
+      //int r = fileread(v->file, fault_addr, PGSIZE);
+      int r = read_vma(v, fault_addr); // new
+      printf("r: %d\n", r);
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

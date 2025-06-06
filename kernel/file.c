@@ -126,6 +126,29 @@ vmadealloc(struct vma* v)
 }
 */
 
+// Read an inode into a VMA's file specified.
+// Either reads in 4096 bytes (1 Page) or the 
+// remaining length and offset in the file.
+// Returns the bytes read by readi.
+int 
+read_vma(struct vma *vma, uint64 va) {
+  int r;
+  struct inode *ip = vma->file->ip;
+  ilock(ip);
+  int offset = va - PGROUNDDOWN(vma->start_addr);
+  int n = PGSIZE;
+  if (vma->length - offset < n) {
+    n = vma->length - offset; 
+  }
+  /*
+int
+readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
+  */
+  r = readi(ip, 1, va, offset, n);
+  iunlock(ip);
+  return r;
+}
+
 // Get metadata about file f.
 // addr is a user virtual address, pointing to a struct stat.
 int
@@ -152,14 +175,18 @@ fileread(struct file *f, uint64 addr, int n)
 {
   int r = 0;
 
-  if(f->readable == 0)
+  if (f->readable == 0) {
+    printf("not readable\n");
     return -1;
+  }
 
   if(f->type == FD_PIPE){
     r = piperead(f->pipe, addr, n);
   } else if(f->type == FD_DEVICE){
-    if(f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
+    if (f->major < 0 || f->major >= NDEV || !devsw[f->major].read) {
+      printf("fread");
       return -1;
+    }
     r = devsw[f->major].read(1, addr, n);
   } else if(f->type == FD_INODE){
     ilock(f->ip);
