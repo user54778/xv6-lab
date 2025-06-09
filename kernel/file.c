@@ -134,16 +134,15 @@ int
 read_vma(struct vma *vma, uint64 va) {
   int r;
   struct inode *ip = vma->file->ip;
+
   ilock(ip);
   int offset = va - PGROUNDDOWN(vma->start_addr);
   int n = PGSIZE;
+  // check if reading less than a page
   if (vma->length - offset < n) {
     n = vma->length - offset; 
   }
-  /*
-int
-readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
-  */
+  // grab return value for error checking
   r = readi(ip, 1, va, offset, n);
   iunlock(ip);
   return r;

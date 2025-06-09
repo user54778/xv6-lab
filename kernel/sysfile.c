@@ -574,39 +574,72 @@ sys_munmap(void)
   printf("len: %d\n", len);
 
   struct proc *p = myproc();
+
   struct vma *v = 0;
   for (int i = 0; i < NVMA; i++) {
-    // Unmap the entire region
     if (p->vma_table[i].in_use && (p->vma_table[i].start_addr <= va && p->vma_table[i].end_addr > va)) {
-      printf("hi\n");
       v = &p->vma_table[i];
+      printf("v: %p\n", v);
+      printf("p->vma_table: %p\n", p->vma_table);
       break;
     } 
   }
 
   if (!v) {
+    printf("invalid\n");
     return -1;
   }
 
+  //printf("va 0: %p\n", va);
   va = PGROUNDDOWN(va);
+  //printf("va 1: %p\n", va);
   int npages = PGROUNDUP(len) / PGSIZE;
 
-  if (v->flags & MAP_SHARED) {
-    printf("IMPLEMENT ME\n");
-  }
-  printf("vi: %d\n", vi);
+  printf("va: %p, npages: %d\n", va, npages);
 
-  // void uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
-  // TODO: MODIFY ME TO UNMAP SPECIFIED MMAP ADDRESS SPACE
-  uvmunmap(p->pagetable, va, npages, 1);
-  v->in_use = 0;
-  fileclose(v->file);
+  // TODO: Check if unmapped page is modified AND MAP_SHARED for file is set, write
+  // the page back to the file
+  // Use filewrite() as inspiration.
   /*
   int
   filewrite(struct file *f, uint64 addr, int n)
   */
-  // TODO: Check if unmapped page is modified AND MAP_SHARED for file is set, write
-  // the page back to the file
-  // Use filewrite() as inspiration.
+  if (v->flags & MAP_SHARED) {
+    filewrite(v->file, va, len);
+
+  }
+
+  // May not be a valid virtual address to unmap
+  // Seems like a waste of an execution branch so there is likely a better solution.
+  if (walkaddr(p->pagetable, va)) {
+    uvmunmap(p->pagetable, va, npages, 1);
+  }
+  //printf("vi: %d\n", v);
+
+  // void uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+  // How many pages are we unmapping? 
+  // len + va - npages
+  /*
+  printf("test: %d\n", len + (va - npages));
+  printf("test 2: %d\n", PGROUNDUP(len + (va - PGROUNDDOWN(va))) / PGSIZE);
+  */
+
+  // update the len of bytes now mapped
+  v->length -= len;
+
+  /*
+  printf("new va: %d\n", va);
+  printf("new len: %d\n", v->length);
+  */
+
+  // Our mmap'd region has shrunk so we should move it up.
+  if (va == v->start_addr) {
+    v->start_addr += len;
+  }
+
+  if (v->length == 0) {
+    v->in_use = 0;
+    fileclose(v->file);
+  }
   return 0;
 }

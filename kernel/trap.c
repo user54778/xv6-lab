@@ -95,7 +95,8 @@ usertrap(void)
     struct proc *p = myproc();
     struct vma *v = 0;
     for (int i = 0; i < NVMA; i++) {
-      if (p->vma_table[i].in_use && p->vma_table[i].start_addr <= fault_addr && fault_addr <= p->vma_table[i].end_addr) {
+      if (p->vma_table[i].in_use && 
+          p->vma_table[i].start_addr <= fault_addr && fault_addr <= p->vma_table[i].end_addr) {
         v = &p->vma_table[i];
         break;
       }
@@ -132,7 +133,7 @@ usertrap(void)
       int r = read_vma(v, fault_addr); // new
       printf("r: %d\n", r);
     }
-  } else if((which_dev = devintr()) != 0){
+  } else if ((which_dev = devintr()) != 0) {
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
