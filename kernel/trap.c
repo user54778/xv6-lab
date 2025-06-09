@@ -91,7 +91,7 @@ usertrap(void)
     // pages the program actually modified.
     // This should use the dirty bit (PTE_D).
     uint64 fault_addr = r_stval();
-    printf("Fault address: %p\n", &fault_addr);
+    //printf("Fault address: %p\n", &fault_addr);
     struct proc *p = myproc();
     struct vma *v = 0;
     for (int i = 0; i < NVMA; i++) {
@@ -104,12 +104,16 @@ usertrap(void)
     if (!v) {
       printf("usertrap(): can't find vma mapping\n");
       p->killed = 1;
+      // Immediately kill the process.
+      // FIXME: Come up with a better solution to killing this (instead of goto)
+      goto kill;
     }
 
     char *mem = kalloc();
     if (mem == 0) {
       printf("usertrap(): kalloc failed\n");
       p->killed = 1;
+      goto kill;
     } else {
       memset(mem, 0, PGSIZE);
       int flags = PTE_U;
@@ -125,6 +129,7 @@ usertrap(void)
         kfree(mem);
         printf("usertrap(): mappages failed\n");
         p->killed = 1;
+        goto kill;
       }
 
       // This may not be correct, however, is for now not causing issues.
@@ -141,6 +146,7 @@ usertrap(void)
     p->killed = 1;
   }
 
+kill:
   if(p->killed)
     exit(-1);
 

@@ -511,7 +511,7 @@ sys_mmap(void)
   // 1) Find where the mmap region should start
   struct proc *p = myproc();
   uint64 vma_start_region = p->cur_mmap_region - PGROUNDUP(length);
-  printf("vma_start_region: %d\n", vma_start_region);
+  //printf("vma_start_region: %d\n", vma_start_region);
 
   // 2) Allocate a vma from the vma table
   struct vma *v = 0;
@@ -537,9 +537,9 @@ sys_mmap(void)
   
   p->cur_mmap_region = vma_start_region;
 
-  printf("f: %p\n", f);
-  printf("Mmap region: start_addr: %d, end_addr: %d, len: %d, prot: %d, flags: %d file: %p\n", 
-         v->start_addr, v->end_addr, v->length, v->prot, v->flags, v->file);
+  //printf("f: %p\n", f);
+  //printf("Mmap region: start_addr: %d, end_addr: %d, len: %d, prot: %d, flags: %d file: %p\n", 
+  //       v->start_addr, v->end_addr, v->length, v->prot, v->flags, v->file);
   /*
   for (int i = 0; i < NVMA; i++) {
     if (!p->vma_table[i].in_use) {
@@ -570,8 +570,8 @@ sys_munmap(void)
   if (argaddr(0, &va) < 0 || argint(1, &len) < 0) {
     return -1;
   }
-  printf("va: %p\n", va);
-  printf("len: %d\n", len);
+  //printf("va: %p\n", va);
+  //printf("len: %d\n", len);
 
   struct proc *p = myproc();
 
@@ -579,8 +579,8 @@ sys_munmap(void)
   for (int i = 0; i < NVMA; i++) {
     if (p->vma_table[i].in_use && (p->vma_table[i].start_addr <= va && p->vma_table[i].end_addr > va)) {
       v = &p->vma_table[i];
-      printf("v: %p\n", v);
-      printf("p->vma_table: %p\n", p->vma_table);
+      //printf("v: %p\n", v);
+      //printf("p->vma_table: %p\n", p->vma_table);
       break;
     } 
   }
@@ -595,7 +595,7 @@ sys_munmap(void)
   //printf("va 1: %p\n", va);
   int npages = PGROUNDUP(len) / PGSIZE;
 
-  printf("va: %p, npages: %d\n", va, npages);
+  //printf("va: %p, npages: %d\n", va, npages);
 
   // TODO: Check if unmapped page is modified AND MAP_SHARED for file is set, write
   // the page back to the file

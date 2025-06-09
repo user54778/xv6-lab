@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -159,6 +160,9 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  // free vma structures
+  memset(p->vma_table, 0, sizeof(p->vma_table));
+  p->cur_mmap_region = MAXVMA;
 }
 
 // Create a user page table for a given process,
@@ -262,6 +266,12 @@ growproc(int n)
   return 0;
 }
 
+/*
+static void copy_vma() {
+
+}
+*/
+
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
 int
@@ -304,6 +314,33 @@ fork(void)
 
   np->state = RUNNABLE;
 
+  // Copy the parent vma into the child
+  for (int i = 0; i < NVMA; i++) {
+    struct vma *parent_vma = &p->vma_table[i];
+    if (parent_vma->in_use) {
+        // Originally creating a child pointer but no need since we can directly
+        // modify np itself.
+      if (!np->vma_table[i].in_use) {
+        np->vma_table[i] = p->vma_table[i];    
+        np->vma_table[i].file = filedup(p->vma_table[i].file);
+          /*
+          np->vma_table[i] = p->vma_table[i];
+          np->vma_table[i].file = filedup(p->)
+          np->vma_table[j].file = filedup(parent_vma->file);
+          np->vma_table[j].start_addr = parent_vma->start_addr;
+          np->vma_table[j].end_addr = parent_vma->end_addr;
+          np->vma_table[j].prot = parent_vma->prot;
+          np->vma_table[j].flags = parent_vma->flags;
+          np->vma_table[j].length = parent_vma->length;
+          np->vma_table[j].in_use = 1;
+          */
+      } else {
+        panic("aaaa");
+      }
+    }
+  }
+  np->cur_mmap_region = p->cur_mmap_region;
+
   release(&np->lock);
 
   return pid;
@@ -345,6 +382,26 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // unmap all vma regions as if we called munmap
+  for (int i = 0; i < NVMA; i++) {
+    if (p->vma_table[i].in_use) {
+      struct vma *v = &p->vma_table[i];
+      //munmap(v->start_addr, v->length);
+      int npages = PGROUNDUP(v->length) / PGSIZE;
+      if (walkaddr(p->pagetable, p->vma_table[i].start_addr)) {
+        if (p->vma_table[i].flags & MAP_SHARED) {
+          filewrite(p->vma_table[i].file, p->vma_table[i].start_addr, p->vma_table[i].length);
+        }
+        uvmunmap(p->pagetable, PGROUNDDOWN(v->start_addr), npages, 1);
+        fileclose(v->file);
+        v->in_use = 0;
+      }
+    }
+  }
+
+  // new mmap region
+  p->cur_mmap_region = MAXVMA;
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
@@ -400,6 +457,7 @@ exit(int status)
   sched();
   panic("zombie exit");
 }
+
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
