@@ -72,7 +72,8 @@ usertrap(void)
 
     syscall();
   } else if (r_scause() == 13 || r_scause() == 15) {
-    printf("MMAP\n");
+    //printf("MMAP\n");
+
     // Allocate a page of memory (kalloc())
     // Read 4096 bytes, i.e., a page of the file into our alloc'd page  (readi())
     //    This read should be performed on the file inode, i.e., readi
@@ -86,6 +87,8 @@ usertrap(void)
     // memset() phys page
     // mappages() map phys page -> vaddr
     // readi()
+    //
+    // Not needed: 
     // Extra??? Below
     // Later on, repeat this process for the entire length of the file, writing back MAP_SHARED
     // pages the program actually modified.

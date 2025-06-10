@@ -540,13 +540,6 @@ sys_mmap(void)
   //printf("f: %p\n", f);
   //printf("Mmap region: start_addr: %d, end_addr: %d, len: %d, prot: %d, flags: %d file: %p\n", 
   //       v->start_addr, v->end_addr, v->length, v->prot, v->flags, v->file);
-  /*
-  for (int i = 0; i < NVMA; i++) {
-    if (!p->vma_table[i].in_use) {
-      printf("NOT IN USE AFTER: %d\n", i);
-    }
-  }
-  */
 
   return vma_start_region;
 }
@@ -563,7 +556,6 @@ sys_munmap(void)
   // If munmap removes ALL pages of an mmap call, it should DECREMENT the refcnt of the struct file.
   // If an unmapped page has been MODIFIED and the file is MAP_SHARED, write the page BACK to the file.
   // Use filewrite as inspiration.
-  //
   uint64 va;
   int len;
 
@@ -590,20 +582,10 @@ sys_munmap(void)
     return -1;
   }
 
-  //printf("va 0: %p\n", va);
   va = PGROUNDDOWN(va);
-  //printf("va 1: %p\n", va);
   int npages = PGROUNDUP(len) / PGSIZE;
-
   //printf("va: %p, npages: %d\n", va, npages);
 
-  // TODO: Check if unmapped page is modified AND MAP_SHARED for file is set, write
-  // the page back to the file
-  // Use filewrite() as inspiration.
-  /*
-  int
-  filewrite(struct file *f, uint64 addr, int n)
-  */
   if (v->flags & MAP_SHARED) {
     filewrite(v->file, va, len);
 
@@ -614,15 +596,8 @@ sys_munmap(void)
   if (walkaddr(p->pagetable, va)) {
     uvmunmap(p->pagetable, va, npages, 1);
   }
-  //printf("vi: %d\n", v);
 
   // void uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
-  // How many pages are we unmapping? 
-  // len + va - npages
-  /*
-  printf("test: %d\n", len + (va - npages));
-  printf("test 2: %d\n", PGROUNDUP(len + (va - PGROUNDDOWN(va))) / PGSIZE);
-  */
 
   // update the len of bytes now mapped
   v->length -= len;

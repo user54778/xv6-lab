@@ -266,12 +266,6 @@ growproc(int n)
   return 0;
 }
 
-/*
-static void copy_vma() {
-
-}
-*/
-
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
 int
@@ -318,24 +312,13 @@ fork(void)
   for (int i = 0; i < NVMA; i++) {
     struct vma *parent_vma = &p->vma_table[i];
     if (parent_vma->in_use) {
-        // Originally creating a child pointer but no need since we can directly
-        // modify np itself.
+      // Originally creating a child pointer but no need since we can directly
+      // modify np itself.
       if (!np->vma_table[i].in_use) {
         np->vma_table[i] = p->vma_table[i];    
         np->vma_table[i].file = filedup(p->vma_table[i].file);
-          /*
-          np->vma_table[i] = p->vma_table[i];
-          np->vma_table[i].file = filedup(p->)
-          np->vma_table[j].file = filedup(parent_vma->file);
-          np->vma_table[j].start_addr = parent_vma->start_addr;
-          np->vma_table[j].end_addr = parent_vma->end_addr;
-          np->vma_table[j].prot = parent_vma->prot;
-          np->vma_table[j].flags = parent_vma->flags;
-          np->vma_table[j].length = parent_vma->length;
-          np->vma_table[j].in_use = 1;
-          */
       } else {
-        panic("aaaa");
+        panic("fork(): No matching vma table entry");
       }
     }
   }
