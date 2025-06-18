@@ -5,6 +5,8 @@
 #define MBUF_SIZE              2048
 #define MBUF_DEFAULT_HEADROOM  128
 
+// A data structure to hold packet data, used in the transmit 
+// and receive descriptors, and their respective ring buffers.
 struct mbuf {
   struct mbuf  *next; // the next mbuf in the chain
   char         *head; // the current start position of the buffer
@@ -23,7 +25,7 @@ char *mbuftrim(struct mbuf *m, unsigned int len);
 // [-headroom-][------buffer------][-tailroom-]
 // |----------------MBUF_SIZE-----------------|
 //
-// These marcos automatically typecast and determine the size of header structs.
+// These macros automatically typecast and determine the size of header structs.
 // In most situations you should use these instead of the raw ops above.
 #define mbufpullhdr(mbuf, hdr) (typeof(hdr)*)mbufpull(mbuf, sizeof(hdr))
 #define mbufpushhdr(mbuf, hdr) (typeof(hdr)*)mbufpush(mbuf, sizeof(hdr))
@@ -48,6 +50,7 @@ void mbufq_init(struct mbufq *q);
 // endianness support
 //
 
+// Swap a 16 bit value endianness.
 static inline uint16 bswaps(uint16 val)
 {
   return (((val & 0x00ffU) << 8) |
@@ -73,15 +76,23 @@ static inline uint32 bswapl(uint32 val)
 //
 // useful networking headers
 //
+//
+// +---------------+-------+--------+---------+
+// +      DNS      +  UDP  +   IP   +   ETH   +
+// +---------------+-------+--------+---------+
 
+// Used for dhost/shost
 #define ETHADDR_LEN 6
+
+// NOTE: All types must be packed to ensure the compiler
+// does NOT add padding to any fields.
 
 // an Ethernet packet header (start of the packet).
 struct eth {
   uint8  dhost[ETHADDR_LEN];
   uint8  shost[ETHADDR_LEN];
   uint16 type;
-} __attribute__((packed));
+} __attribute__((packed)); 
 
 #define ETHTYPE_IP  0x0800 // Internet protocol
 #define ETHTYPE_ARP 0x0806 // Address resolution protocol

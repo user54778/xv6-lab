@@ -97,14 +97,32 @@
 #define E1000_TXD_STAT_DD    0x00000001 /* Descriptor Done */
 
 // [E1000 3.3.3]
+// Our E1000 uses the legacy descriptor format. It is also a data structure
+// that contains a transmit buffer address addr, and metadata for hardware
+// to supply packet info.
+//
+// Similarly, we can imagine this 16-byte structure to look like this:
+// Bit:         63       48 47   40 39 36 35 32 31 24 23  16 15      0
+//              +----------------------------------------------------+
+//Offset 0x00   |                Buffer Address [63:0]               |
+//              +----------+-------+----+-----+-----+-------+--------+
+//Offset 0x08   | Special  |  CSS  | RSV| STA | CMD | CSO   | Length |
+//              +----------+-------+----+-----+-----+-------+--------+
 struct tx_desc
 {
+  // The address of the transmit descriptor in host memory.
   uint64 addr;
+  // The length per segment; max length allowed per segment is 16288 bytes.
   uint16 length;
+  // Checksum offset
   uint8 cso;
+  // Command field
   uint8 cmd;
+  // Status field
   uint8 status;
+  // Checksum start field
   uint8 css;
+  // Special field
   uint16 special;
 };
 
@@ -113,13 +131,44 @@ struct tx_desc
 #define E1000_RXD_STAT_EOP      0x02    /* End of Packet */
 
 // [E1000 3.2.3]
+// A receive descriptor is a data structure that contains the receive data buffer address
+// addr, and metadata for the hardware to store packet information.
+// Upon receipt of a packet, the hardware will store the packet data into the indicated
+// buffer and write the metadata as shown by the structure below.
+//
+// We can imagine this structure to conceptually look like this:
+// Bit:         63       48  47     40 39     32 31      16  15      0
+//              +----------------------------------------------------+
+//Offset 0x00   |                Buffer Address [63:0]               |
+//              +----------+----------+----------+----------+--------+
+//Offset 0x08   | Special  |  Errors  |  Status  | Packet   | Length |
+//              |          |          |          | Checksum |        |
+//              +----------+----------+----------+----------+--------+
 struct rx_desc
 {
-  uint64 addr;       /* Address of the descriptor's data buffer */
-  uint16 length;     /* Length of data DMAed into data buffer */
-  uint16 csum;       /* Packet checksum */
-  uint8 status;      /* Descriptor status */
-  uint8 errors;      /* Descriptor Errors */
+  // Address of the descriptor's data buffer (actual packet data) 
+  uint64 addr;       
+  // Length of data DMA'ed into data buffer 
+  uint16 length;     
+  // Packet checksum 
+  uint16 csum;       
+  // Receive status (RDESC.STATUS)
+  // Indicate whether the descriptor has been 
+  // a) used, and
+  // b) whether the *referenced* buffer is the LAST ONE for the packet.
+  // 7                                                0
+  // +-----+-----+------+-----+-----+-----+-----+-----+
+  // | PIF | IPCS| TCPCS| RSV | VP  | IXSM| EOP | DD  |
+  // +-----+-----+------+-----+-----+-----+-----+-----+
+  // Only care about DD and EOP (Descriptor Done && End of Packet)
+  uint8 status;      
+  // We will only get this error info when the Store Bad Packets bit
+  // (RCTL.SBP) is set AND a bad packet is received.
+  // +-----+-----+------+---------+-----+--------+----------+--------+
+  // | RXE | IPE | TCPE | RSC CXE | RSV | SEQ RSV| SE RSV   |   CE   |
+  // +-----+-----+------+---------+-----+--------+----------+--------+
+  uint8 errors;
+  // Hardware can store additional info in the receive descriptor for 802.1q packets.
   uint16 special;
 };
 

@@ -52,6 +52,8 @@ e1000_init(uint32 *xregs)
   regs[E1000_TDH] = regs[E1000_TDT] = 0;
   
   // [E1000 14.4] Receive initialization
+  // Allocate region of memory for receive descriptor list,
+  // aligned on a 16-byte boundary
   memset(rx_ring, 0, sizeof(rx_ring));
   for (i = 0; i < RX_RING_SIZE; i++) {
     rx_mbufs[i] = mbufalloc(0);
@@ -103,6 +105,70 @@ e1000_transmit(struct mbuf *m)
   // a pointer so that it can be freed after sending.
   //
   
+  // What should TX do?
+  // Transmission process goes as so:
+  // 1) Protocol stack recvs block of data to transmit.
+  // 2) Protocol stack computes num packets to transmit
+  // 3) For each packet:
+  //    — Ethernet, IP and TCP/UDP headers are prepared by the stack.
+  //    — The stack interfaces with the software device driver and commands the driver to send the
+  //      individual packet.
+  //    — The driver gets the frame and interfaces with the hardware.
+  //    — The hardware reads the packet from host memory (via DMA transfers).
+  //    — The driver returns ownership of the packet to the Network Operating System (NOS) when
+  //    the hardware has completed the DMA transfer of the frame (indicated by an interrupt).
+  // 
+  // Output packets are made up of pointer-length pairs, software should
+  // transmit packets by assembling the list of pointer-length pairs, by storing
+  // this info in the transmit descriptor, and then updating the on-chip transmit TAIL 
+  // pointer to the descriptor.
+  //
+  // We can interact with the E1000 via mmap'd ctl regs to inform when tx descriptors
+  // are filled to send.
+  // regs holds a pointer to the FIRST E1000 ctl reg.
+  // E1000_TDT is what holds the tail pointer of the ring buffer for tx.
+  printf("Hello from e1000_transmit\n");
+
+  /*
+  printf("mbuf addr: %p\n", m);
+  printf("mbuf head: %p\n", m->head);
+  printf("mbuf len: %d\n", m->len);
+  printf("mbuf next: %p\n", m->next);
+  printf("mbuf data: %p\n", m->buf);
+  */
+
+  // Index into the regs array with 
+  uint32 tail_index = regs[E1000_TDT];
+  uint32 head_index = regs[E1000_TDH];
+  printf("tail, head %d %d\n", tail_index, head_index);
+  // 1) Need to check if ring is overflowing
+  //    a) Hardware uses the head to process descriptors. How can we compare the two?
+  //    b) We know it is a circular buffer. Check if the hardware head + 1 modulo ring size
+  //    is the same as where the tail index is pointing (which is + 1 of current tail)
+  if ((head_index + 1) % TX_RING_SIZE == tail_index) {
+    panic("e1000_transmit(): tx ring overflow");
+  }
+  // 2) Also need to check if DD is set
+  if (!(tx_ring[tail_index].status & E1000_TXD_STAT_DD)) {
+    panic("e1000_transmit(): failed to finish previous request");
+  }
+  // 3) Use mbuffree() to free the last mbuf transmitted from that descriptor, if 
+  // there was one.
+  if (tx_mbufs[tail_index] != 0) {
+    mbuffree(tx_mbufs[tail_index]);
+    tx_mbufs[tail_index] = 0; // null out
+  }
+  printf("mbuf addr: %p\n", m);
+  printf("mbuf head: %p\n", m->head);
+  printf("mbuf len: %d\n", m->len);
+  printf("mbuf next: %p\n", m->next);
+  printf("mbuf data: %p\n", m->buf);
+
+  // TODO: Understand the buffer structure, mbuf.
+  // Review bit operations!
+  //
+  // 4) Fill in the descriptor using 3.3.
+  // 5) Update ring position.
   return 0;
 }
 
@@ -115,6 +181,7 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+  printf("Hello from e1000_recv\n");
 }
 
 void
