@@ -127,15 +127,9 @@ e1000_transmit(struct mbuf *m)
   // are filled to send.
   // regs holds a pointer to the FIRST E1000 ctl reg.
   // E1000_TDT is what holds the tail pointer of the ring buffer for tx.
-  printf("Hello from e1000_transmit\n");
-
-  /*
-  printf("mbuf addr: %p\n", m);
-  printf("mbuf head: %p\n", m->head);
-  printf("mbuf len: %d\n", m->len);
-  printf("mbuf next: %p\n", m->next);
-  printf("mbuf data: %p\n", m->buf);
-  */
+  //
+  // NOTE: We need locks to cope with possibility of e1000 being used in multiple processes.
+  acquire(&e1000_lock);
 
   // Index into the regs array with 
   uint32 tail_index = regs[E1000_TDT];
@@ -145,12 +139,18 @@ e1000_transmit(struct mbuf *m)
   //    a) Hardware uses the head to process descriptors. How can we compare the two?
   //    b) We know it is a circular buffer. Check if the hardware head + 1 modulo ring size
   //    is the same as where the tail index is pointing (which is + 1 of current tail)
+  // FIXME: Possible bug source such that software maybe shouldn't be touching
+  // the head?
   if ((head_index + 1) % TX_RING_SIZE == tail_index) {
-    panic("e1000_transmit(): tx ring overflow");
+    //panic("e1000_transmit(): tx ring overflow");
+    release(&e1000_lock);
+    return -1;
   }
   // 2) Also need to check if DD is set
   if (!(tx_ring[tail_index].status & E1000_TXD_STAT_DD)) {
-    panic("e1000_transmit(): failed to finish previous request");
+    //panic("e1000_transmit(): failed to finish previous request");
+    release(&e1000_lock);
+    return -1;
   }
   // 3) Use mbuffree() to free the last mbuf transmitted from that descriptor, if 
   // there was one.
@@ -158,17 +158,38 @@ e1000_transmit(struct mbuf *m)
     mbuffree(tx_mbufs[tail_index]);
     tx_mbufs[tail_index] = 0; // null out
   }
-  printf("mbuf addr: %p\n", m);
-  printf("mbuf head: %p\n", m->head);
-  printf("mbuf len: %d\n", m->len);
-  printf("mbuf next: %p\n", m->next);
-  printf("mbuf data: %p\n", m->buf);
 
-  // TODO: Understand the buffer structure, mbuf.
-  // Review bit operations!
+  // mbuf works as so: 
+  //
+  // Bit operations for our purpose as so:
   //
   // 4) Fill in the descriptor using 3.3.
+  //    m->head pts to the packet's content in memory 
+  //    m->len is packet len
+  //    Set the correct cmd flags
+  //    "Stash away a pointer to the mbuf to later free"
+  //      -> Stash away in this context means storing the pointer to the mbuf
+  //      somewhere such that it can be later cleaned up.
+  tx_mbufs[tail_index] = m; // stash away pointer
+  tx_ring[tail_index].addr = (uint64)tx_mbufs[tail_index]->head; // addr -> mbuf content
+  tx_ring[tail_index].length = m->len;
+  // We have EOP and RS bits given to us as macros
+  tx_ring[tail_index].cmd |= (E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP);
   // 5) Update ring position.
+  printf("prior ring pos: %d\n", regs[E1000_TDT]);
+
+  regs[E1000_TDT] = (tail_index + 1) % TX_RING_SIZE;
+
+  printf("updated ring pos: %d\n", regs[E1000_TDT]);
+
+  printf("tx_ring addr: %p\n", tx_ring[tail_index].addr);
+  printf("tx_ring len: %d\n", tx_ring[tail_index].length);
+  printf("tx_ring cmd bits: %d\n", tx_ring[tail_index].cmd);
+  //
+  // Additional: If we were able to add the mbuf to the ring successfully, return 0.
+  // Otherwise, return -1 so the *caller* knows to free mbuf.
+
+  release(&e1000_lock);
   return 0;
 }
 
