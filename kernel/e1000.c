@@ -97,14 +97,6 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(struct mbuf *m)
 {
-  //
-  // Your code here.
-  //
-  // the mbuf contains an ethernet frame; program it into
-  // the TX descriptor ring so that the e1000 sends it. Stash
-  // a pointer so that it can be freed after sending.
-  //
-  
   // What should TX do?
   // Transmission process goes as so:
   // 1) Protocol stack recvs block of data to transmit.
@@ -134,7 +126,7 @@ e1000_transmit(struct mbuf *m)
   // Index into the regs array with 
   uint32 tail_index = regs[E1000_TDT];
   uint32 head_index = regs[E1000_TDH];
-  printf("tail, head %d %d\n", tail_index, head_index);
+  //printf("DEBUG: tail, head %d %d\n", tail_index, head_index);
   // 1) Need to check if ring is overflowing
   //    a) Hardware uses the head to process descriptors. How can we compare the two?
   //    b) We know it is a circular buffer. Check if the hardware head + 1 modulo ring size
@@ -176,15 +168,17 @@ e1000_transmit(struct mbuf *m)
   // We have EOP and RS bits given to us as macros
   tx_ring[tail_index].cmd |= (E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP);
   // 5) Update ring position.
-  printf("prior ring pos: %d\n", regs[E1000_TDT]);
+  //printf("DEBUG: prior ring pos: %d\n", regs[E1000_TDT]);
 
   regs[E1000_TDT] = (tail_index + 1) % TX_RING_SIZE;
 
-  printf("updated ring pos: %d\n", regs[E1000_TDT]);
+  //printf("DEBUG: updated ring pos: %d\n", regs[E1000_TDT]);
 
-  printf("tx_ring addr: %p\n", tx_ring[tail_index].addr);
-  printf("tx_ring len: %d\n", tx_ring[tail_index].length);
-  printf("tx_ring cmd bits: %d\n", tx_ring[tail_index].cmd);
+  /*
+  printf("DEBUG: tx_ring addr: %p\n", tx_ring[tail_index].addr);
+  printf("DEBUG: tx_ring len: %d\n", tx_ring[tail_index].length);
+  printf("DEBUG: tx_ring cmd bits: %d\n", tx_ring[tail_index].cmd);
+  */
   //
   // Additional: If we were able to add the mbuf to the ring successfully, return 0.
   // Otherwise, return -1 so the *caller* knows to free mbuf.
@@ -196,13 +190,47 @@ e1000_transmit(struct mbuf *m)
 static void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
-  // Check for packets that have arrived from the e1000
-  // Create and deliver an mbuf for each packet (using net_rx()).
-  //
-  printf("Hello from e1000_recv\n");
+  // use net_rx()
+  // What should RX do?
+  // Here, we are receiving packets.
+  // In the general case, we should recognize the presence of a packet on the wire,
+  // perform address filtering, store the packet in the receive FIFO, transfer the data
+  // to a buffer in host memory, and update the state of the receive descriptor.
+  // 
+  // The main difference is *when* we should receive packets compared to TX; we need to scan
+  // the RX ring for mbufs and deliver each one to the network stack (using net_rx()?).
+  acquire(&e1000_lock);
+
+  // Keep processing RX
+  while (1) {
+    // Check next waiting recv'd packet.
+    uint32 tail_index = (regs[E1000_RDT] + 1) % TX_RING_SIZE;
+
+    // Is this packet available? If not, immediately break out of
+    // this loop (to avoid stalling the system).
+    if (!(rx_ring[tail_index].status & E1000_TXD_STAT_DD)) {
+      break;
+    }
+    // 3) Update mbuf's len to length in descriptor
+    rx_mbufs[tail_index]->len = rx_ring[tail_index].length; 
+    // 4) Deliver mbuf to net stack w/ net_rx()
+    release(&e1000_lock);
+    net_rx(rx_mbufs[tail_index]);
+    acquire(&e1000_lock);
+    // 5) Allocate a new mbufalloc()
+    if ((rx_mbufs[tail_index] = mbufalloc(0)) == 0) {
+      panic("e1000_recv(): mbufalloc() failed\n");
+    }
+    rx_ring[tail_index].addr = (uint64) rx_mbufs[tail_index]->head;
+    rx_ring[tail_index].status = 0;
+    //    a) Program the data pointer into the descriptor
+    //    b) Clear the status bits
+    // 6) Update E1000_RDT w/ correct index tail pointer
+    // 7) Check to ensure we don't exceed ring size(?)
+    regs[E1000_RDT] = tail_index;
+  }
+
+  release(&e1000_lock);
 }
 
 void
